@@ -1,4 +1,4 @@
-export type MediaType = 'video' | 'image' | 'color'
+export type MediaType = 'video' | 'audio' | 'image' | 'color'
 
 export type ThumbnailStatus = 'idle' | 'generating' | 'ready' | 'error'
 

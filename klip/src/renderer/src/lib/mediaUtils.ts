@@ -24,9 +24,11 @@ export function pathToFileUrl(filePath: string): string {
   return `klip://local/${encoded}`
 }
 
-export function getMediaTypeFromPath(filePath: string): 'video' | 'image' {
+export function getMediaTypeFromPath(filePath: string): 'video' | 'audio' | 'image' {
   const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
-  return ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext) ? 'image' : 'video'
+  if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(ext)) return 'image'
+  if (['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(ext)) return 'audio'
+  return 'video'
 }
 
 export function formatDuration(seconds: number): string {
@@ -60,23 +62,40 @@ interface ProcessedMedia {
   duration: number
   width: number
   height: number
-  thumbnail: string
+  thumbnail: string | null
 }
 
 /**
- * Load a media file via the HTML5 video/image element, extract metadata,
+ * Load a media file via the HTML5 video/image/audio element, extract metadata,
  * and render a thumbnail frame to a canvas — all without FFmpeg.
  *
- * Returns a base64 data URL for the thumbnail.
+ * Returns a base64 data URL for the thumbnail (null for audio files).
  */
 export async function processMediaFile(filePath: string): Promise<ProcessedMedia> {
   const type = getMediaTypeFromPath(filePath)
   const url = pathToFileUrl(filePath)
 
-  if (type === 'image') {
-    return processImage(url)
-  }
+  if (type === 'image') return processImage(url)
+  if (type === 'audio') return processAudio(url)
   return processVideo(url)
+}
+
+function processAudio(url: string): Promise<ProcessedMedia> {
+  return new Promise((resolve, reject) => {
+    const audio = new Audio()
+    const timeout = setTimeout(() => reject(new Error('Audio load timeout')), 10_000)
+
+    audio.onloadedmetadata = () => {
+      clearTimeout(timeout)
+      resolve({ duration: isFinite(audio.duration) ? audio.duration : 0, width: 0, height: 0, thumbnail: null })
+    }
+    audio.onerror = () => {
+      clearTimeout(timeout)
+      reject(new Error('Audio load error'))
+    }
+    audio.src = url
+    audio.load()
+  })
 }
 
 function processImage(url: string): Promise<ProcessedMedia> {

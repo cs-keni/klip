@@ -14,7 +14,13 @@ const MIME_TYPES: Record<string, string> = {
   '.jpeg': 'image/jpeg',
   '.webp': 'image/webp',
   '.gif': 'image/gif',
-  '.bmp': 'image/bmp'
+  '.bmp': 'image/bmp',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.aac': 'audio/aac',
+  '.flac': 'audio/flac',
+  '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4'
 }
 
 function getMimeType(filePath: string): string {

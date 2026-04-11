@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { AlertTriangle, CheckCircle2, Film, ImageIcon } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Film, ImageIcon, Music } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatDuration, formatResolution } from '@/lib/mediaUtils'
 import { useProjectStore } from '@/stores/projectStore'
@@ -64,7 +64,15 @@ export default function ClipCard({
     if (e.key === 'Escape') onRenameCancel()
   }
 
+  // Outer div owns the HTML5 drag events; framer-motion's onDragStart is a separate type.
   return (
+    <div
+      draggable={!isRenaming}
+      onDragStart={(e) => {
+        e.dataTransfer.setData('application/klip-clip', clip.id)
+        e.dataTransfer.effectAllowed = 'copy'
+      }}
+    >
     <motion.div
       layout
       initial={{ opacity: 0, y: 6, scale: 0.95 }}
@@ -90,6 +98,7 @@ export default function ClipCard({
         <div className="absolute top-1.5 left-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
           <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-sm">
             {clip.type === 'video' && <Film size={10} className="text-white/80" />}
+            {clip.type === 'audio' && <Music size={10} className="text-white/80" />}
             {clip.type === 'image' && <ImageIcon size={10} className="text-white/80" />}
           </div>
         </div>
@@ -143,6 +152,8 @@ export default function ClipCard({
         <p className="text-[10px] text-[var(--text-muted)] mt-0.5 leading-tight truncate">
           {clip.type === 'color' ? (
             <>Color · {clip.duration}s</>
+          ) : clip.type === 'audio' ? (
+            <>Audio · {clip.duration > 0 ? formatDuration(clip.duration) : '–'}</>
           ) : (
             <>
               {clip.duration > 0 ? formatDuration(clip.duration) : '–'}
@@ -154,6 +165,7 @@ export default function ClipCard({
         </p>
       </div>
     </motion.div>
+    </div>
   )
 }
 
@@ -178,6 +190,8 @@ function Thumbnail({ clip }: { clip: MediaClip }): JSX.Element {
       <div className="w-full h-full flex items-center justify-center bg-[var(--bg-elevated)]">
         {clip.type === 'image' ? (
           <ImageIcon size={18} className="text-[var(--text-muted)]" />
+        ) : clip.type === 'audio' ? (
+          <Music size={18} className="text-[var(--text-muted)]" />
         ) : (
           <Film size={18} className="text-[var(--text-muted)]" />
         )}

@@ -10,7 +10,7 @@ import SkeletonCard from './SkeletonCard'
 import ClipContextMenu from './ClipContextMenu'
 import ColorClipDialog from './ColorClipDialog'
 
-const ACCEPTED_EXTENSIONS = /\.(mp4|mkv|mov|avi|png|jpg|jpeg|webp)$/i
+const ACCEPTED_EXTENSIONS = /\.(mp4|mkv|mov|avi|webm|mp3|wav|aac|flac|ogg|m4a|png|jpg|jpeg|webp)$/i
 
 interface ContextMenuState {
   clip: MediaClip
@@ -245,7 +245,7 @@ export default function MediaBin(): JSX.Element {
                 <Upload size={20} className="text-white" />
               </div>
               <p className="text-sm font-semibold text-[var(--accent-bright)]">Drop to import</p>
-              <p className="text-xs text-[var(--text-muted)]">MP4, MKV, MOV, AVI, PNG, JPG, WEBP</p>
+              <p className="text-xs text-[var(--text-muted)]">MP4, MKV, MOV, MP3, WAV, PNG, JPG…</p>
             </motion.div>
           )}
         </AnimatePresence>

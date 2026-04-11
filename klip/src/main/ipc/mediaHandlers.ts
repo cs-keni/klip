@@ -9,9 +9,10 @@ export function registerMediaHandlers(): void {
       filters: [
         {
           name: 'Media Files',
-          extensions: ['mp4', 'mkv', 'mov', 'avi', 'png', 'jpg', 'jpeg', 'webp']
+          extensions: ['mp4', 'mkv', 'mov', 'avi', 'webm', 'mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', 'png', 'jpg', 'jpeg', 'webp']
         },
-        { name: 'Video Files', extensions: ['mp4', 'mkv', 'mov', 'avi'] },
+        { name: 'Video Files', extensions: ['mp4', 'mkv', 'mov', 'avi', 'webm'] },
+        { name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'] },
         { name: 'Image Files', extensions: ['png', 'jpg', 'jpeg', 'webp'] }
       ],
       properties: ['openFile', 'multiSelections']
