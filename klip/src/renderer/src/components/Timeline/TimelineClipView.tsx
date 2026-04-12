@@ -15,6 +15,8 @@ interface TimelineClipViewProps {
   pxPerSec: number
   trackHeight: number
   isSelected: boolean
+  isPrimary: boolean
+  isLocked: boolean
 }
 
 const CLIP_STYLE: Record<string, { bg: string; border: string; text: string }> = {
@@ -46,14 +48,17 @@ export default function TimelineClipView({
   clip,
   pxPerSec,
   trackHeight,
-  isSelected
+  isSelected,
+  isPrimary,
+  isLocked
 }: TimelineClipViewProps): JSX.Element {
   const {
     clips, transitions, playheadTime,
-    moveClip, trimClip, selectClip,
+    moveClip, trimClip, selectClip, toggleClipInSelection,
     setClipVolume, setClipSpeed,
     setTextSettings, setColorSettings, setCropSettings,
-    addTransition, removeTransition
+    addTransition, removeTransition,
+    snapEnabled
   } = useTimelineStore()
   const { clips: mediaClips } = useMediaStore()
 
@@ -94,6 +99,7 @@ export default function TimelineClipView({
   }
 
   function snapTime(t: number, pts: number[]): number {
+    if (!snapEnabled) return t
     const threshold = SNAP_PX / pxPerSec
     let best = t, bestDist = threshold
     for (const p of pts) {
@@ -106,8 +112,15 @@ export default function TimelineClipView({
   // ── Drag ─────────────────────────────────────────────────────────────────────
   function startDrag(e: React.PointerEvent, mode: DragMode) {
     if (e.button !== 0) return
+    if (isLocked) return
     e.preventDefault()
     e.stopPropagation()
+
+    // Ctrl/Cmd+click → toggle this clip in/out of the multi-selection
+    if (e.ctrlKey || e.metaKey) {
+      toggleClipInSelection(clip.id)
+      return
+    }
 
     selectClip(clip.id)
     isDragging.current = true
@@ -196,7 +209,7 @@ export default function TimelineClipView({
   return (
     <>
       <motion.div
-        className={cn('absolute select-none touch-none', isSelected ? 'z-20' : 'z-10')}
+        className={cn('absolute select-none touch-none', isSelected ? 'z-20' : 'z-10', isLocked && 'pointer-events-none opacity-70')}
         style={{ left: leftMV, width: widthMV, top: PADDING, height: clipHeight }}
         initial={{ opacity: 0, scaleX: 0.92 }}
         animate={{ opacity: 1, scaleX: 1 }}
@@ -230,9 +243,11 @@ export default function TimelineClipView({
             borderWidth: 1,
             borderStyle: 'solid',
             borderColor: isSelected ? style.border : 'rgba(255,255,255,0.12)',
-            boxShadow:   isSelected
+            boxShadow: isPrimary
               ? `0 0 0 1px ${style.border}, 0 0 8px ${style.border}44`
-              : '0 1px 3px rgba(0,0,0,0.4)'
+              : isSelected
+                ? `0 0 0 1px ${style.border}88`
+                : '0 1px 3px rgba(0,0,0,0.4)'
           }}
           onPointerDown={(e) => startDrag(e, 'move')}
         >
@@ -496,7 +511,7 @@ function ClipContextMenu({
                 onClick={() => onSpeedChange(s)}
                 className={cn(
                   'px-2 py-1 rounded text-[10px] font-mono font-semibold transition-colors duration-75',
-                  Math.abs((clip.speed ?? 1) - s) < 0.01
+                  Math.abs(speed - s) < 0.01
                     ? 'bg-[var(--accent)] text-white'
                     : 'bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
                 )}

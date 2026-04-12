@@ -18,6 +18,7 @@ interface ProjectState {
   // Actions
   newProject: (name: string) => void
   setProjectName: (name: string) => void
+  setProjectPath: (path: string) => void
   setUnsavedChanges: (value: boolean) => void
   updateSettings: (partial: Partial<ProjectSettings>) => void
 }
@@ -43,6 +44,8 @@ export const useProjectStore = create<ProjectState>((set) => ({
     }),
 
   setProjectName: (name) => set({ projectName: name, hasUnsavedChanges: true }),
+
+  setProjectPath: (path) => set({ projectPath: path }),
 
   setUnsavedChanges: (value) => set({ hasUnsavedChanges: value }),
 

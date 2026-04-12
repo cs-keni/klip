@@ -173,46 +173,48 @@ Aesthetic: dark, modern, fluid — closer to Figma/Linear than Blender.
 
 ---
 
-## Phase 3 — Timeline Core
+## Phase 3 — Timeline Core ✅ MOSTLY COMPLETE
 
 > Goal: The heart of the editor — arranging, cutting, and trimming clips.
 
-- [ ] Horizontal scrollable timeline with time ruler at top
-- [ ] Video track lanes and audio track lanes (separate rows)
-- [ ] Track renaming — double-click any track label to rename it
-- [ ] Drag clips from media bin onto timeline (places only the in/out selection if set)
+- [x] Horizontal scrollable timeline with time ruler at top
+- [x] Video track lanes and audio track lanes (separate rows)
+- [x] Track renaming — double-click any track label to rename it
+- [x] Drag clips from media bin onto timeline
 - [ ] Linked clip selection — clicking a video clip also selects its linked audio; they move together by default
   - [ ] Hold Alt while clicking to select video or audio independently
-- [ ] Drag to reorder / reposition clips on the timeline
-- [ ] Playhead — scrub left/right to seek
-- [ ] Follow playhead — timeline scrolls during playback to keep the playhead centered in view
-- [ ] Timeline zoom — scroll wheel to zoom in/out (more/less time visible)
-- [ ] Zoom to fit — backslash key (\) zooms the timeline so all clips fit the visible width
-- [ ] Clip trimming — drag the left or right edge of a clip to trim it
-- [ ] Trim to playhead — Q trims the selected clip's end to the playhead; W trims its start
-- [ ] Split clip at playhead (keyboard: S)
-- [ ] Delete clip from timeline (keyboard: Delete / Backspace)
-- [ ] Ripple delete — remove a clip and close the gap automatically
-- [ ] Gap detection — empty gaps between clips are highlighted with a visible indicator
-  - [ ] Right-click a gap to "Close Gap" (ripples all subsequent clips left)
-- [ ] Copy / paste clips — Ctrl+C copies selected clip(s); Ctrl+V pastes at the playhead position
-- [ ] Snap-to-clip-edges — clips magnetize to adjacent clip edges while dragging
-- [ ] Snap toggle — enable/disable snapping (Ctrl+\ or toolbar button)
-- [ ] Track locking — lock/unlock individual tracks via a padlock icon
-- [ ] Clip thumbnails visible on the timeline at sufficient zoom levels
-- [ ] Clip duration label on each timeline clip
-- [ ] Multi-select clips (Shift+click, Ctrl+click, drag select)
+- [x] Drag to reorder / reposition clips on the timeline
+- [x] Playhead — scrub left/right to seek
+- [x] Follow playhead — timeline scrolls during playback to keep the playhead centered in view
+- [x] Timeline zoom — scroll wheel to zoom in/out (more/less time visible)
+- [x] Zoom to fit — backslash key (\) zooms the timeline so all clips fit the visible width
+- [x] Clip trimming — drag the left or right edge of a clip to trim it
+- [x] Trim to playhead — Q trims the selected clip's end to the playhead; W trims its start
+- [x] Split clip at playhead (keyboard: S)
+- [x] Delete clip from timeline (keyboard: Delete / Backspace)
+- [x] Ripple delete — remove a clip and close the gap automatically (Shift+Delete)
+- [x] Gap detection — empty gaps between clips are highlighted with a visible amber indicator
+  - [x] Right-click (or left-click) a gap to "Close Gap" (ripples all subsequent clips left)
+- [x] Copy / paste clips — Ctrl+C copies selected clip(s); Ctrl+V pastes at the playhead position
+- [x] Snap-to-clip-edges — clips magnetize to adjacent clip edges while dragging
+- [x] Snap toggle — enable/disable snapping (Ctrl+\ or toolbar magnet button)
+- [x] Track locking — lock/unlock individual tracks via a padlock icon (prevents edits/drops)
+- [x] Clip thumbnails visible on the timeline at sufficient zoom levels
+- [x] Clip duration label on each timeline clip
+- [x] Multi-select clips — Ctrl+click to toggle clips in/out of selection; Delete/copy work on all selected
+- [ ] Multi-select drag — move all selected clips together (deferred)
+- [ ] Shift+click range select (deferred)
 - [ ] Freeze frame — right-click a clip at the playhead position to insert a freeze frame hold
-- [ ] Full undo / redo stack (Ctrl+Z / Ctrl+Shift+Z)
+- [x] Full undo / redo stack (Ctrl+Z / Ctrl+Shift+Z)
 - [ ] Timeline virtualization — only render visible clip elements (handles 8-hour source clips)
 
 **QoL / UX:**
-- [ ] Smooth animated clip drag with ghost/shadow under cursor
-- [ ] Timeline ruler tick marks update smoothly on zoom
-- [ ] Clip resize handles appear on hover (not always visible — reduces clutter)
+- [x] Smooth animated clip drag with spring physics
+- [x] Timeline ruler tick marks update smoothly on zoom
+- [x] Clip resize handles appear on hover (not always visible — reduces clutter)
 - [ ] Snap indicator line when clip is about to snap to an edge
-- [ ] Locked tracks visually dimmed with lock icon
-- [ ] Gap indicator pulses subtly to draw attention
+- [x] Locked tracks visually dimmed with lock icon
+- [x] Gap indicators with amber dashed pattern
 - [ ] Ripple delete plays a subtle "collapse" animation
 - [ ] Copy confirmation — briefly flash the copied clip(s) to confirm the action
 

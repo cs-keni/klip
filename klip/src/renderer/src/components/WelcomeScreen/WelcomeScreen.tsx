@@ -1,19 +1,48 @@
-import { type ReactNode } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Plus, FolderOpen, Clock, ChevronRight, Film } from 'lucide-react'
 import { useAppStore } from '@/stores/appStore'
 import { useProjectStore } from '@/stores/projectStore'
+import { openProject } from '@/lib/projectIO'
 
-// Placeholder — will be populated from saved project files in Phase 8
-const RECENT_PROJECTS: { name: string; path: string; lastEdited: string }[] = []
+interface RecentEntry {
+  name: string
+  path: string
+  lastEditedAt: string
+}
+
+function formatRelativeTime(isoString: string): string {
+  const diff = Date.now() - new Date(isoString).getTime()
+  const mins = Math.floor(diff / 60_000)
+  if (mins < 1) return 'Just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days}d ago`
+  return new Date(isoString).toLocaleDateString()
+}
 
 export default function WelcomeScreen(): JSX.Element {
   const setView = useAppStore((s) => s.setView)
   const newProject = useProjectStore((s) => s.newProject)
+  const [recentProjects, setRecentProjects] = useState<RecentEntry[]>([])
+
+  useEffect(() => {
+    window.api.project.getRecent().then(setRecentProjects).catch(() => {})
+  }, [])
 
   function handleNewProject(): void {
     newProject('Untitled Project')
     setView('editor')
+  }
+
+  async function handleOpenProject(): Promise<void> {
+    await openProject()
+  }
+
+  async function handleOpenRecent(path: string): Promise<void> {
+    await openProject(path)
   }
 
   return (
@@ -78,9 +107,7 @@ export default function WelcomeScreen(): JSX.Element {
             icon={<FolderOpen size={18} />}
             title="Open Project"
             description="Continue where you left off"
-            onClick={() => {
-              /* Phase 8: file picker */
-            }}
+            onClick={handleOpenProject}
           />
         </motion.div>
 
@@ -98,15 +125,22 @@ export default function WelcomeScreen(): JSX.Element {
             </span>
           </div>
 
-          {RECENT_PROJECTS.length === 0 ? (
+          {recentProjects.length === 0 ? (
             <div className="rounded-lg border border-dashed border-[var(--border)] py-7 flex flex-col items-center gap-2">
               <Film size={18} className="text-[var(--text-disabled)]" />
               <p className="text-[var(--text-muted)] text-xs">No recent projects</p>
             </div>
           ) : (
             <div className="flex flex-col gap-1">
-              {RECENT_PROJECTS.map((project, i) => (
-                <RecentRow key={i} {...project} />
+              {recentProjects.map((project, i) => (
+                <RecentRow
+                  key={project.path}
+                  index={i}
+                  name={project.name}
+                  path={project.path}
+                  lastEditedAt={project.lastEditedAt}
+                  onOpen={handleOpenRecent}
+                />
               ))}
             </div>
           )}
@@ -175,28 +209,39 @@ function ActionCard({
 }
 
 function RecentRow({
+  index,
   name,
   path,
-  lastEdited
+  lastEditedAt,
+  onOpen
 }: {
+  index: number
   name: string
   path: string
-  lastEdited: string
+  lastEditedAt: string
+  onOpen: (path: string) => void
 }): JSX.Element {
   return (
     <motion.button
+      initial={{ opacity: 0, x: -8 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.2, delay: 0.22 + index * 0.04, ease: 'easeOut' }}
       whileHover={{ backgroundColor: 'var(--bg-elevated)' }}
-      transition={{ duration: 0.1 }}
-      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-left w-full"
+      onClick={() => onOpen(path)}
+      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-left w-full group"
     >
-      <div className="w-8 h-8 rounded-md bg-[var(--bg-elevated)] border border-[var(--border)] shrink-0 flex items-center justify-center">
-        <Film size={13} className="text-[var(--text-muted)]" />
+      <div className="w-8 h-8 rounded-md bg-[var(--bg-elevated)] border border-[var(--border)] shrink-0 flex items-center justify-center group-hover:border-[var(--accent)] transition-colors duration-150">
+        <Film size={13} className="text-[var(--text-muted)] group-hover:text-[var(--accent-bright)] transition-colors duration-150" />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-[var(--text-primary)] truncate">{name}</p>
-        <p className="text-xs text-[var(--text-muted)] truncate">{lastEdited} · {path}</p>
+        <p className="text-sm text-[var(--text-primary)] truncate font-medium">{name}</p>
+        <p className="text-xs text-[var(--text-muted)] truncate mt-0.5">
+          {formatRelativeTime(lastEditedAt)}
+          <span className="mx-1 opacity-40">·</span>
+          <span className="opacity-60">{path}</span>
+        </p>
       </div>
-      <ChevronRight size={13} className="text-[var(--text-muted)] shrink-0" />
+      <ChevronRight size={13} className="text-[var(--text-muted)] shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150" />
     </motion.button>
   )
 }

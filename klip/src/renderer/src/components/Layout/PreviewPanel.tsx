@@ -1,6 +1,6 @@
-import { useRef, useEffect, useMemo, type ReactNode, type CSSProperties } from 'react'
+import { useRef, useEffect, useMemo, useState, useCallback, type ReactNode, type CSSProperties } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, Volume2, Maximize2 } from 'lucide-react'
+import { Play, Pause, Volume2, Maximize2, Repeat, Zap, X, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip } from '@/components/ui/tooltip'
 import { pathToFileUrl, formatTimecode } from '@/lib/mediaUtils'
@@ -18,11 +18,20 @@ function isEffectivelyMuted(trackId: string, tracks: ReturnType<typeof useTimeli
 }
 
 export default function PreviewPanel(): JSX.Element {
+  // ── Quick Preview state ──────────────────────────────────────────────────
+  type QuickPreviewState = 'idle' | 'rendering' | 'ready'
+  const [qpState, setQpState]         = useState<QuickPreviewState>('idle')
+  const [qpProgress, setQpProgress]   = useState(0)
+  const [qpError, setQpError]         = useState<string | null>(null)
+  const qpVideoRef                    = useRef<HTMLVideoElement>(null)
+
   // ── Store ────────────────────────────────────────────────────────────────
   const {
     tracks, clips: timelineClips, transitions,
     playheadTime, setPlayheadTime,
-    isPlaying, setIsPlaying
+    isPlaying, setIsPlaying,
+    loopIn, loopOut, loopEnabled,
+    toggleLoop
   } = useTimelineStore()
 
   const { clips: mediaClips } = useMediaStore()
@@ -83,6 +92,9 @@ export default function PreviewPanel(): JSX.Element {
   const transitionsRef       = useRef(transitions)
   const playheadRef          = useRef(playheadTime)
   const fadeInRef            = useRef<{ startWall: number; duration: number } | null>(null)
+  const loopInRef            = useRef(loopIn)
+  const loopOutRef           = useRef(loopOut)
+  const loopEnabledRef       = useRef(loopEnabled)
 
   useEffect(() => { videoClipsRef.current      = videoClips   }, [videoClips])
   useEffect(() => { audioClipsRef.current      = audioClips   }, [audioClips])
@@ -91,6 +103,9 @@ export default function PreviewPanel(): JSX.Element {
   useEffect(() => { transitionsRef.current     = transitions  }, [transitions])
   useEffect(() => { playheadRef.current        = playheadTime }, [playheadTime])
   useEffect(() => { isPlayingRef.current       = isPlaying    }, [isPlaying])
+  useEffect(() => { loopInRef.current          = loopIn       }, [loopIn])
+  useEffect(() => { loopOutRef.current         = loopOut      }, [loopOut])
+  useEffect(() => { loopEnabledRef.current     = loopEnabled  }, [loopEnabled])
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   function findClipAt(time: number): TimelineClip | null {
@@ -271,10 +286,12 @@ export default function PreviewPanel(): JSX.Element {
 
     function doPlay() {
       if (!isPlayingRef.current) return
-      video.currentTime  = seekTo
-      video.playbackRate = speed
+      const v = videoRef.current
+      if (!v) return
+      v.currentTime  = seekTo
+      v.playbackRate = speed
       applyClipEffects(tlClip)
-      video.play().catch((err) => {
+      v.play().catch((err) => {
         if (isPlayingRef.current && (err as DOMException).name !== 'AbortError') stopPlayback()
       })
       runRafLoop(tlClip, clipEndSrc)
@@ -302,6 +319,20 @@ export default function PreviewPanel(): JSX.Element {
       // Sync playhead to video's actual clock (adjusted for speed)
       const newPlayhead = tlClip.startTime + (video.currentTime - tlClip.trimStart) / speed
       setPlayheadTime(newPlayhead)
+
+      // ── Loop check ──────────────────────────────────────────────────────
+      if (
+        loopEnabledRef.current &&
+        loopInRef.current !== null &&
+        loopOutRef.current !== null &&
+        newPlayhead >= loopOutRef.current
+      ) {
+        const jumpTo = loopInRef.current
+        video.pause()
+        cancelRaf()
+        seekTo(jumpTo)
+        return
+      }
 
       // Apply transition opacity
       const opacity = computeVideoOpacity(tlClip, newPlayhead)
@@ -346,6 +377,19 @@ export default function PreviewPanel(): JSX.Element {
       if (!isPlayingRef.current) return
       const newTime = Math.min(from + (now - startWall) / 1000, to)
       setPlayheadTime(newTime)
+
+      // Loop check during gap advance
+      if (
+        loopEnabledRef.current &&
+        loopInRef.current !== null &&
+        loopOutRef.current !== null &&
+        newTime >= loopOutRef.current
+      ) {
+        cancelRaf()
+        seekTo(loopInRef.current)
+        return
+      }
+
       if (newTime >= to) { onDone(); return }
       rafRef.current = requestAnimationFrame(tick)
     }
@@ -472,6 +516,96 @@ export default function PreviewPanel(): JSX.Element {
     activeTimelineClip?.cropSettings?.panY,
   ])
 
+  // ── Quick Render Preview ─────────────────────────────────────────────────
+
+  // Subscribe to quick preview IPC events
+  useEffect(() => {
+    const unsubProgress = window.api.export.onQuickPreviewProgress((p) => {
+      setQpProgress(p.progress)
+    })
+    const unsubDone = window.api.export.onQuickPreviewDone((filePath) => {
+      setQpState('ready')
+      setQpError(null)
+      // Auto-play the result
+      setTimeout(() => {
+        const vid = qpVideoRef.current
+        if (!vid) return
+        vid.src = pathToFileUrl(filePath)
+        vid.load()
+        vid.play().catch(() => {})
+      }, 100)
+    })
+    const unsubError = window.api.export.onQuickPreviewError((msg) => {
+      setQpState('idle')
+      setQpError(msg)
+    })
+    return () => { unsubProgress(); unsubDone(); unsubError() }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleQuickPreview = useCallback(() => {
+    const {
+      tracks: allTracks,
+      clips: allClips,
+      transitions: allTransitions
+    } = useTimelineStore.getState()
+    const { clips: allMedia } = useMediaStore.getState()
+
+    const videoTrackLocal  = allTracks.find((t) => t.type === 'video')
+    const audioTracksLocal = allTracks.filter((t) => t.type === 'audio' || t.type === 'music')
+    const overlayTrackLocal = allTracks.find((t) => t.type === 'overlay')
+
+    if (!videoTrackLocal) return
+
+    const totalDur = allClips.reduce((mx, c) => Math.max(mx, c.startTime + c.duration), 0)
+    if (totalDur <= 0) return
+
+    const mediaPaths:  Record<string, string> = {}
+    const mediaTypes:  Record<string, string> = {}
+    const mediaColors: Record<string, string> = {}
+    for (const mc of allMedia) {
+      if (mc.path)  mediaPaths[mc.id]  = mc.path
+      mediaTypes[mc.id]  = mc.type
+      if (mc.color) mediaColors[mc.id] = mc.color
+    }
+
+    const job = {
+      outputPath: '__quick_preview__',   // main process overrides this with a temp path
+      width: 1280, height: 720, fps: 30,
+      crf: 30, x264Preset: 'ultrafast',
+      audioBitrate: '128k', sampleRate: 44100,
+      totalDuration: totalDur,
+      videoTrackId:   videoTrackLocal.id,
+      audioTrackIds:  audioTracksLocal.map((t) => t.id),
+      overlayTrackId: overlayTrackLocal?.id ?? '',
+      clips: allClips.map((c) => ({
+        id: c.id, mediaClipId: c.mediaClipId, trackId: c.trackId,
+        clipType: c.type, startTime: c.startTime, trimStart: c.trimStart,
+        duration: c.duration, volume: c.volume ?? 1, speed: c.speed,
+        textSettings: c.textSettings, colorSettings: c.colorSettings, cropSettings: c.cropSettings
+      })),
+      transitions: allTransitions.map((t) => ({
+        fromClipId: t.fromClipId, toClipId: t.toClipId, type: t.type, duration: t.duration
+      })),
+      mediaPaths, mediaTypes, mediaColors,
+      trackMutes: Object.fromEntries(allTracks.map((t) => [t.id, t.isMuted])),
+      trackSolos: allTracks.filter((t) => t.isSolo).map((t) => t.id)
+    }
+
+    setQpState('rendering')
+    setQpProgress(0)
+    setQpError(null)
+    window.api.export.quickPreview(job)
+  }, [])
+
+  const handleCloseQuickPreview = useCallback(() => {
+    window.api.export.cancelQuickPreview()
+    setQpState('idle')
+    setQpProgress(0)
+    setQpError(null)
+    const vid = qpVideoRef.current
+    if (vid) { vid.pause(); vid.src = '' }
+  }, [])
+
   // Active text clips at playhead
   const activeTextClips = useMemo(
     () => overlayClips.filter(
@@ -491,6 +625,10 @@ export default function PreviewPanel(): JSX.Element {
 
   const progressFraction = totalDuration > 0 ? Math.min(1, playheadTime / totalDuration) : 0
 
+  // Loop region fractions on the scrub bar
+  const loopInFrac  = (loopIn  !== null && totalDuration > 0) ? Math.min(1, loopIn  / totalDuration) : null
+  const loopOutFrac = (loopOut !== null && totalDuration > 0) ? Math.min(1, loopOut / totalDuration) : null
+
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-full bg-[var(--bg-base)]">
@@ -506,6 +644,72 @@ export default function PreviewPanel(): JSX.Element {
 
       {/* Canvas */}
       <div className="flex-1 min-h-0 relative bg-black flex items-center justify-center overflow-hidden">
+
+        {/* ── Quick Render Preview overlay ────────────────────────────── */}
+        <AnimatePresence>
+          {qpState === 'rendering' && (
+            <motion.div
+              key="qp-rendering"
+              className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-black/85"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <Loader2 size={28} className="text-[var(--accent)] animate-spin" />
+              <p className="text-xs font-semibold text-[var(--text-secondary)]">Rendering Quick Preview…</p>
+              <div className="w-48 h-1.5 rounded-full bg-[var(--bg-elevated)] overflow-hidden">
+                <motion.div
+                  className="h-full bg-[var(--accent)] rounded-full"
+                  animate={{ width: `${qpProgress * 100}%` }}
+                  transition={{ duration: 0.3 }}
+                />
+              </div>
+              <p className="text-[10px] text-[var(--text-muted)]">{Math.round(qpProgress * 100)}%  ·  720p Draft</p>
+              <button
+                onClick={handleCloseQuickPreview}
+                className="mt-1 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] underline"
+              >
+                Cancel
+              </button>
+            </motion.div>
+          )}
+
+          {qpState === 'ready' && (
+            <motion.div
+              key="qp-ready"
+              className="absolute inset-0 z-30 flex flex-col bg-black"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <div className="flex items-center justify-between px-3 py-1.5 shrink-0 bg-[var(--bg-elevated)]">
+                <span className="text-[11px] font-semibold text-[var(--accent-bright)] uppercase tracking-widest">
+                  Quick Preview  ·  Draft 720p
+                </span>
+                <button
+                  onClick={handleCloseQuickPreview}
+                  className="flex items-center justify-center w-5 h-5 rounded text-[var(--text-muted)] hover:text-white hover:bg-white/10 transition-colors"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+              <div className="flex-1 flex items-center justify-center overflow-hidden">
+                <video
+                  ref={qpVideoRef}
+                  className="max-w-full max-h-full"
+                  controls
+                  playsInline
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {qpError && (
+          <div className="absolute bottom-16 left-3 right-3 z-40 bg-red-950/80 border border-red-700/50 rounded px-3 py-2 text-[11px] text-red-300">
+            Quick Preview failed: {qpError.slice(0, 120)}
+          </div>
+        )}
 
         {/* Video element — always in DOM for seamless src switching */}
         <video
@@ -585,6 +789,17 @@ export default function PreviewPanel(): JSX.Element {
               data-track=""
               className="h-[3px] group-hover/bar:h-[5px] rounded-full bg-[var(--bg-overlay)] relative transition-all duration-150"
             >
+              {/* Loop region band */}
+              {loopInFrac !== null && loopOutFrac !== null && loopOutFrac > loopInFrac && (
+                <div
+                  className="absolute top-0 h-full rounded-full pointer-events-none"
+                  style={{
+                    left: `${loopInFrac * 100}%`,
+                    width: `${(loopOutFrac - loopInFrac) * 100}%`,
+                    backgroundColor: loopEnabled ? 'rgba(168,85,247,0.5)' : 'rgba(168,85,247,0.25)'
+                  }}
+                />
+              )}
               <div
                 className="h-full bg-[var(--accent)] rounded-full"
                 style={{ width: `${progressFraction * 100}%` }}
@@ -651,7 +866,33 @@ export default function PreviewPanel(): JSX.Element {
               </TransportBtn>
             </div>
 
-            <div className="w-[72px] flex items-center justify-end gap-2">
+            <div className="flex items-center justify-end gap-1.5" style={{ width: 110 }}>
+              {/* Loop toggle */}
+              <Tooltip content={loopEnabled ? 'Loop on  Ctrl+L' : 'Loop off  Ctrl+L'}>
+                <button
+                  onClick={toggleLoop}
+                  className={cn(
+                    'flex items-center justify-center w-6 h-6 rounded transition-colors duration-100',
+                    loopEnabled
+                      ? 'text-purple-400 bg-purple-500/20'
+                      : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/10'
+                  )}
+                >
+                  <Repeat size={11} />
+                </button>
+              </Tooltip>
+
+              {/* Quick Render Preview */}
+              <Tooltip content="Quick Render Preview — low-res FFmpeg draft for seamless playback">
+                <button
+                  onClick={handleQuickPreview}
+                  disabled={isEmpty || qpState === 'rendering'}
+                  className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-muted)] hover:text-yellow-400 hover:bg-white/10 transition-colors duration-100 disabled:opacity-30 disabled:pointer-events-none"
+                >
+                  <Zap size={11} />
+                </button>
+              </Tooltip>
+
               <Tooltip content="Volume (coming soon)">
                 <button className="text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors">
                   <Volume2 size={13} />

@@ -1,11 +1,12 @@
 import { useState, useRef, useCallback, useEffect, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Lock, Volume2, VolumeX, Pencil } from 'lucide-react'
+import { Lock, Unlock, Volume2, VolumeX, Pencil, ArrowLeftRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTimelineStore } from '@/stores/timelineStore'
 import { useMediaStore } from '@/stores/mediaStore'
 import { TRACK_HEIGHT, HEADER_WIDTH, type Track, type TimelineClip } from '@/types/timeline'
+import type { MediaClip } from '@/types/media'
 import TimelineClipView from './TimelineClipView'
 
 const TRACK_ACCENT: Record<Track['type'], string> = {
@@ -22,6 +23,15 @@ interface TrackRowProps {
   scrollLeft: number
   contentWidth: number
   selectedClipId: string | null
+  selectedClipIds: string[]
+}
+
+/** A gap between two adjacent clips on the same track. */
+interface Gap {
+  startTime: number
+  endTime: number
+  startPx: number
+  widthPx: number
 }
 
 export default function TrackRow({
@@ -30,29 +40,57 @@ export default function TrackRow({
   pxPerSec,
   scrollLeft,
   contentWidth,
-  selectedClipId
+  selectedClipId,
+  selectedClipIds
 }: TrackRowProps): JSX.Element {
-  const { addClip, selectClip, renameTrack, toggleMute, toggleSolo } = useTimelineStore()
-  const { clips: mediaClips } = useMediaStore()
+  const {
+    addClip, selectClip, renameTrack,
+    toggleMute, toggleSolo, toggleLock,
+    snapEnabled, closeGap
+  } = useTimelineStore()
+  const { clips: mediaClips, addClip: addMediaClip } = useMediaStore()
 
   const [isRenaming, setIsRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState(track.name)
   const [isDragOver, setIsDragOver] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const [gapMenu, setGapMenu] = useState<{ x: number; y: number; gap: Gap } | null>(null)
   const dragCounterRef = useRef(0)
   const laneRef = useRef<HTMLDivElement>(null)
 
   const height = TRACK_HEIGHT[track.type]
   const accent = TRACK_ACCENT[track.type]
 
+  // ── Gap detection ──────────────────────────────────────────────────────────
+
+  const gaps: Gap[] = (() => {
+    const sorted = [...clips].sort((a, b) => a.startTime - b.startTime)
+    const result: Gap[] = []
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const end  = sorted[i].startTime + sorted[i].duration
+      const next = sorted[i + 1].startTime
+      if (next - end > 0.05) {
+        result.push({
+          startTime: end,
+          endTime: next,
+          startPx: end * pxPerSec,
+          widthPx: (next - end) * pxPerSec
+        })
+      }
+    }
+    return result
+  })()
+
   // ── Drag-and-drop ──────────────────────────────────────────────────────────
 
+  const ACCEPTED_TYPES = ['application/klip-clip', 'application/klip-music']
+
   const handleDragEnter = useCallback((e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes('application/klip-clip')) return
+    if (!ACCEPTED_TYPES.some((t) => e.dataTransfer.types.includes(t))) return
     e.preventDefault()
     dragCounterRef.current += 1
     setIsDragOver(true)
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDragLeave = useCallback(() => {
     dragCounterRef.current -= 1
@@ -63,10 +101,27 @@ export default function TrackRow({
   }, [])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes('application/klip-clip')) return
+    if (!ACCEPTED_TYPES.some((t) => e.dataTransfer.types.includes(t))) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'copy'
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Shared: compute drop time from mouse X, with optional snapping. */
+  function computeDropTime(clientX: number): number {
+    const rect = laneRef.current!.getBoundingClientRect()
+    const rawTime = Math.max(0, (clientX - rect.left + scrollLeft) / pxPerSec)
+    if (!snapEnabled) return rawTime
+    const SNAP_PX = 8
+    const threshold = SNAP_PX / pxPerSec
+    const snapPoints = [0, ...clips.flatMap((c) => [c.startTime, c.startTime + c.duration])]
+    let best = threshold
+    let snapped = rawTime
+    for (const p of snapPoints) {
+      const d = Math.abs(rawTime - p)
+      if (d < best) { best = d; snapped = p }
+    }
+    return snapped
+  }
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -74,46 +129,73 @@ export default function TrackRow({
       dragCounterRef.current = 0
       setIsDragOver(false)
 
+      if (track.isLocked || track.type === 'overlay') return
+
+      // ── Media bin clip drop ──────────────────────────────────────────────
       const mediaClipId = e.dataTransfer.getData('application/klip-clip')
-      // Overlay track only holds text clips — media bin clips don't go here
-      if (!mediaClipId || track.isLocked || track.type === 'overlay') return
-
-      const mediaClip = mediaClips.find((c) => c.id === mediaClipId)
-      if (!mediaClip) return
-
-      // Calculate drop time from mouse position
-      const rect = laneRef.current!.getBoundingClientRect()
-      const localX = e.clientX - rect.left
-      const contentX = localX + scrollLeft
-      const rawTime = Math.max(0, contentX / pxPerSec)
-
-      // Snap to existing clip edges (same 8px threshold as TimelineClipView)
-      const SNAP_PX = 8
-      const snapThreshold = SNAP_PX / pxPerSec
-      const snapPoints = [0, ...clips.flatMap((c) => [c.startTime, c.startTime + c.duration])]
-      let startTime = rawTime
-      let bestDist = snapThreshold
-      for (const p of snapPoints) {
-        const d = Math.abs(rawTime - p)
-        if (d < bestDist) { bestDist = d; startTime = p }
+      if (mediaClipId) {
+        const mediaClip = mediaClips.find((c) => c.id === mediaClipId)
+        if (!mediaClip) return
+        const startTime = computeDropTime(e.clientX)
+        const newClip: TimelineClip = {
+          id: crypto.randomUUID(),
+          mediaClipId,
+          trackId: track.id,
+          startTime,
+          duration: mediaClip.duration > 0 ? mediaClip.duration : 5,
+          trimStart: 0,
+          type: mediaClip.type === 'color' ? 'color' : mediaClip.type,
+          name: mediaClip.name,
+          thumbnail: mediaClip.thumbnail,
+          color: mediaClip.color
+        }
+        addClip(newClip)
+        return
       }
 
-      const newClip: TimelineClip = {
-        id: crypto.randomUUID(),
-        mediaClipId,
-        trackId: track.id,
-        startTime,
-        duration: mediaClip.duration > 0 ? mediaClip.duration : 5,
-        trimStart: 0,
-        type: mediaClip.type === 'color' ? 'color' : mediaClip.type,
-        name: mediaClip.name,
-        thumbnail: mediaClip.thumbnail,
-        color: mediaClip.color
+      // ── Music library track drop ─────────────────────────────────────────
+      const musicRaw = e.dataTransfer.getData('application/klip-music')
+      if (musicRaw && (track.type === 'music' || track.type === 'audio')) {
+        try {
+          const musicData = JSON.parse(musicRaw) as {
+            id: string; filePath: string; title: string; duration: number
+          }
+          // Find or create a MediaClip for this file path
+          let mediaClip = mediaClips.find((c) => c.path === musicData.filePath)
+          if (!mediaClip) {
+            const newMedia: MediaClip = {
+              id:              crypto.randomUUID(),
+              type:            'audio',
+              path:            musicData.filePath,
+              name:            musicData.title,
+              duration:        musicData.duration,
+              width: 0, height: 0, fps: 0, fileSize: 0,
+              thumbnail:       null,
+              thumbnailStatus: 'idle',
+              isOnTimeline:    false,
+              isMissing:       false,
+              addedAt:         Date.now()
+            }
+            addMediaClip(newMedia)
+            mediaClip = newMedia
+          }
+          const startTime = computeDropTime(e.clientX)
+          const newClip: TimelineClip = {
+            id:          crypto.randomUUID(),
+            mediaClipId: mediaClip.id,
+            trackId:     track.id,
+            startTime,
+            duration:    musicData.duration > 0 ? musicData.duration : 180,
+            trimStart:   0,
+            type:        'audio',
+            name:        musicData.title,
+            thumbnail:   null
+          }
+          addClip(newClip)
+        } catch {}
       }
-
-      addClip(newClip)
     },
-    [track, mediaClips, pxPerSec, scrollLeft, addClip]
+    [track, mediaClips, pxPerSec, scrollLeft, snapEnabled, addClip, addMediaClip, clips] // eslint-disable-line react-hooks/exhaustive-deps
   )
 
   // ── Track rename ───────────────────────────────────────────────────────────
@@ -136,7 +218,7 @@ export default function TrackRow({
       <div
         className={cn(
           'shrink-0 flex items-center gap-1.5 px-2 border-r border-[var(--border-subtle)] bg-[var(--bg-surface)] z-10 cursor-default transition-opacity duration-150',
-          track.isMuted && 'opacity-50'
+          (track.isMuted || track.isLocked) && 'opacity-50'
         )}
         style={{ width: HEADER_WIDTH, position: 'sticky', left: 0 }}
         onContextMenu={(e) => {
@@ -180,15 +262,14 @@ export default function TrackRow({
             onClick={() => toggleSolo(track.id)}
             title={track.isSolo ? 'Unsolo' : 'Solo'}
             active={track.isSolo}
-            icon={
-              <span className="text-[9px] font-bold leading-none">S</span>
-            }
+            icon={<span className="text-[9px] font-bold leading-none">S</span>}
           />
-          {/* Lock (placeholder — Phase 8) */}
+          {/* Lock */}
           <TrackIconButton
-            onClick={() => {}}
-            title={track.isLocked ? 'Unlock' : 'Lock track'}
-            icon={<Lock size={10} />}
+            onClick={() => toggleLock(track.id)}
+            title={track.isLocked ? 'Unlock track' : 'Lock track'}
+            active={track.isLocked}
+            icon={track.isLocked ? <Lock size={10} /> : <Unlock size={10} />}
           />
         </div>
       </div>
@@ -209,15 +290,30 @@ export default function TrackRow({
         )}
       </AnimatePresence>
 
+      {/* ── Gap context menu ────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {gapMenu && (
+          <GapContextMenu
+            x={gapMenu.x}
+            y={gapMenu.y}
+            onClose={() => setGapMenu(null)}
+            onCloseGap={() => {
+              closeGap(track.id, gapMenu.gap.startTime)
+              setGapMenu(null)
+            }}
+          />
+        )}
+      </AnimatePresence>
+
       {/* ── Clip lane ───────────────────────────────────────────────────── */}
       <div
         ref={laneRef}
         className={cn(
           'relative flex-1 transition-colors duration-100',
-          isDragOver
+          isDragOver && !track.isLocked
             ? 'bg-[var(--accent-glow)] ring-1 ring-inset ring-[var(--accent-dim)]'
             : 'bg-[var(--bg-base)] hover:bg-[rgba(255,255,255,0.01)]',
-          track.isMuted && 'opacity-50'
+          (track.isMuted || track.isLocked) && 'opacity-50'
         )}
         style={{ width: contentWidth }}
         onClick={() => selectClip(null)}
@@ -229,6 +325,40 @@ export default function TrackRow({
         {/* Subtle second-interval grid lines */}
         <GridLines pxPerSec={pxPerSec} height={height} contentWidth={contentWidth} />
 
+        {/* ── Gap indicators ──────────────────────────────────────────── */}
+        {gaps.map((gap) => (
+          <div
+            key={gap.startTime}
+            className="absolute top-1 bottom-1 z-5 cursor-pointer group/gap"
+            style={{ left: gap.startPx, width: Math.max(gap.widthPx, 4) }}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setGapMenu({ x: e.clientX, y: e.clientY, gap })
+            }}
+            onClick={(e) => {
+              e.stopPropagation()
+              setGapMenu({ x: e.clientX, y: e.clientY, gap })
+            }}
+          >
+            {/* Gap fill */}
+            <div
+              className="absolute inset-0 rounded opacity-30 group-hover/gap:opacity-60 transition-opacity duration-100"
+              style={{
+                background: 'repeating-linear-gradient(90deg, rgba(251,191,36,0.3) 0px, rgba(251,191,36,0.3) 2px, transparent 2px, transparent 6px)',
+                borderTop: '1px solid rgba(251,191,36,0.4)',
+                borderBottom: '1px solid rgba(251,191,36,0.4)'
+              }}
+            />
+            {/* Close-gap icon — only visible when wide enough */}
+            {gap.widthPx > 20 && (
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/gap:opacity-100 transition-opacity duration-100">
+                <ArrowLeftRight size={10} className="text-amber-400" />
+              </div>
+            )}
+          </div>
+        ))}
+
         <AnimatePresence>
           {clips.map((clip) => (
             <TimelineClipView
@@ -236,7 +366,9 @@ export default function TrackRow({
               clip={clip}
               pxPerSec={pxPerSec}
               trackHeight={height}
-              isSelected={selectedClipId === clip.id}
+              isSelected={selectedClipIds.includes(clip.id)}
+              isPrimary={selectedClipId === clip.id}
+              isLocked={track.isLocked}
             />
           ))}
         </AnimatePresence>
@@ -244,6 +376,8 @@ export default function TrackRow({
     </div>
   )
 }
+
+// ── Track context menu ─────────────────────────────────────────────────────
 
 function TrackContextMenu({
   x,
@@ -301,6 +435,66 @@ function TrackContextMenu({
   )
 }
 
+// ── Gap context menu ───────────────────────────────────────────────────────
+
+function GapContextMenu({
+  x,
+  y,
+  onClose,
+  onCloseGap
+}: {
+  x: number
+  y: number
+  onClose: () => void
+  onCloseGap: () => void
+}): JSX.Element {
+  const menuRef = useRef<HTMLDivElement>(null)
+  const MENU_W = 160
+  const MENU_H = 44
+  const clampedX = Math.min(x, window.innerWidth - MENU_W - 8)
+  const clampedY = Math.min(y, window.innerHeight - MENU_H - 8)
+
+  useEffect(() => {
+    function onDown(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) onClose()
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+
+  return createPortal(
+    <motion.div
+      ref={menuRef}
+      className="fixed z-[9999] min-w-[160px] rounded-lg overflow-hidden border border-[var(--border)] bg-[var(--bg-overlay)] shadow-xl"
+      style={{ left: clampedX, top: clampedY }}
+      initial={{ opacity: 0, scale: 0.94, y: -4 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.94, y: -4 }}
+      transition={{ duration: 0.1, ease: 'easeOut' }}
+    >
+      <div className="py-1">
+        <button
+          onClick={onCloseGap}
+          className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs font-medium text-left text-amber-400 hover:bg-[var(--bg-elevated)] hover:text-amber-300 transition-colors duration-75"
+        >
+          <span className="opacity-80"><ArrowLeftRight size={13} /></span>
+          Close Gap
+        </button>
+      </div>
+    </motion.div>,
+    document.body
+  )
+}
+
+// ── Track icon button ──────────────────────────────────────────────────────
+
 function TrackIconButton({
   icon,
   title,
@@ -338,7 +532,6 @@ function GridLines({
   height: number
   contentWidth: number
 }): JSX.Element | null {
-  // Only draw grid lines at reasonable densities
   if (pxPerSec < 10 || pxPerSec > 500) return null
 
   let interval = 1

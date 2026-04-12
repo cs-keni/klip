@@ -11,6 +11,7 @@ interface ClipCardProps {
   isSelected: boolean
   isRenaming: boolean
   onClick: (e: React.MouseEvent) => void
+  onDoubleClick?: (e: React.MouseEvent) => void
   onContextMenu: (e: React.MouseEvent) => void
   onRenameCommit: (name: string) => void
   onRenameCancel: () => void
@@ -28,6 +29,7 @@ export default function ClipCard({
   isSelected,
   isRenaming,
   onClick,
+  onDoubleClick,
   onContextMenu,
   onRenameCommit,
   onRenameCancel
@@ -88,6 +90,7 @@ export default function ClipCard({
           : 'border-[var(--border-subtle)] hover:border-[var(--accent-dim)] hover:shadow-[0_0_10px_var(--accent-glow)]'
       )}
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
     >
       {/* Thumbnail area */}

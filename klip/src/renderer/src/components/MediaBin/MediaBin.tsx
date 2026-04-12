@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Upload, Film, Square } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useMediaStore } from '@/stores/mediaStore'
+import { useSourceViewerStore } from '@/stores/sourceViewerStore'
 import { processMediaFile, getMediaTypeFromPath } from '@/lib/mediaUtils'
 import type { MediaClip } from '@/types/media'
 import ClipCard from './ClipCard'
@@ -21,6 +22,7 @@ interface ContextMenuState {
 export default function MediaBin(): JSX.Element {
   const { clips, addClip, removeClip, updateClip, renameClip, selectClip, selectedClipId } =
     useMediaStore()
+  const { openClip } = useSourceViewerStore()
   const [dragCounter, setDragCounter] = useState(0)
   const [colorDialogOpen, setColorDialogOpen] = useState(false)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
@@ -276,6 +278,11 @@ export default function MediaBin(): JSX.Element {
                     onClick={(e) => {
                       e.stopPropagation()
                       selectClip(clip.id)
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation()
+                      // Color clips have no source to preview
+                      if (clip.type !== 'color') openClip(clip)
                     }}
                     onContextMenu={(e) => handleContextMenu(e, clip)}
                     onRenameCommit={(name) => {

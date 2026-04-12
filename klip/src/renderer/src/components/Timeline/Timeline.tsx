@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
-import { Minus, Plus, Maximize2, Undo2, Redo2 } from 'lucide-react'
+import { Minus, Plus, Maximize2, Undo2, Redo2, Magnet, Repeat } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatTimecode } from '@/lib/mediaUtils'
 import { useTimelineStore } from '@/stores/timelineStore'
@@ -17,12 +17,19 @@ export default function Timeline(): JSX.Element {
   const {
     tracks, clips,
     playheadTime, pxPerSec,
-    selectedClipId,
+    selectedClipId, selectedClipIds,
     isPlaying, setIsPlaying,
+    snapEnabled, toggleSnap,
+    loopIn, loopOut, loopEnabled,
+    setLoopIn, setLoopOut, toggleLoop, clearLoop,
     past, future,
     setPlayheadTime, setPxPerSec,
-    removeClip, selectClip,
-    splitClip, rippleDelete,
+    removeClip, removeSelectedClips,
+    selectClip,
+    splitClip,
+    rippleDelete, rippleDeleteSelected,
+    copySelectedClips, pasteClips,
+    trimToPlayhead,
     undo, redo
   } = useTimelineStore()
 
@@ -117,22 +124,70 @@ export default function Timeline(): JSX.Element {
         e.preventDefault(); setPlayheadTime(Math.max(0, playheadTime - FRAME)); return
       }
 
+      // ── Trim to playhead ───────────────────────────────────────────────
+      if (e.key === 'q' && !e.ctrlKey && !e.metaKey && selectedClipId) {
+        e.preventDefault(); trimToPlayhead(selectedClipId, 'end'); return
+      }
+      if (e.key === 'w' && !e.ctrlKey && !e.metaKey && selectedClipId) {
+        e.preventDefault(); trimToPlayhead(selectedClipId, 'start'); return
+      }
+
+      // ── Copy / paste ───────────────────────────────────────────────────
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && !e.shiftKey) {
+        e.preventDefault(); copySelectedClips(); return
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && !e.shiftKey) {
+        e.preventDefault(); pasteClips(); return
+      }
+
       // ── Editing ────────────────────────────────────────────────────────
-      if (e.key === '\\') { e.preventDefault(); zoomToFit(); return }
+      if (e.key === '\\' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault(); zoomToFit(); return
+      }
+      if (e.key === '\\' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault(); toggleSnap(); return
+      }
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') {
         e.preventDefault(); undo(); return
       }
       if ((e.ctrlKey || e.metaKey) && (e.shiftKey && e.key === 'z' || e.key === 'y')) {
         e.preventDefault(); redo(); return
       }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedClipId) {
+
+      // Delete / ripple-delete — works on all selected clips
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedClipIds.length === 0) return
         e.preventDefault()
-        if (e.shiftKey) rippleDelete(selectedClipId)
-        else removeClip(selectedClipId)
+        if (e.shiftKey) {
+          if (selectedClipIds.length > 1) rippleDeleteSelected()
+          else rippleDelete(selectedClipIds[0])
+        } else {
+          if (selectedClipIds.length > 1) removeSelectedClips()
+          else removeClip(selectedClipIds[0])
+        }
         return
       }
+
+      // Split — uses primary selected clip only
       if (e.key === 's' && !e.ctrlKey && !e.metaKey && selectedClipId) {
         e.preventDefault(); splitClip(selectedClipId); return
+      }
+
+      // ── Loop in/out/toggle ─────────────────────────────────────────────
+      if (e.key === 'i' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault(); setLoopIn(playheadTime); return
+      }
+      if (e.key === 'o' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault(); setLoopOut(playheadTime); return
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'l') {
+        e.preventDefault(); toggleLoop(); return
+      }
+      if (e.key === 'Escape') {
+        // Clear loop if it's active, otherwise let other handlers take it
+        if (loopEnabled || loopIn !== null || loopOut !== null) {
+          e.preventDefault(); clearLoop(); return
+        }
       }
     }
 
@@ -142,7 +197,13 @@ export default function Timeline(): JSX.Element {
     isPlaying, setIsPlaying,
     playheadTime, setPlayheadTime,
     zoomToFit, undo, redo,
-    selectedClipId, removeClip, splitClip, rippleDelete
+    selectedClipId, selectedClipIds,
+    removeClip, removeSelectedClips,
+    splitClip, rippleDelete, rippleDeleteSelected,
+    copySelectedClips, pasteClips,
+    trimToPlayhead, toggleSnap,
+    loopIn, loopOut, loopEnabled,
+    setLoopIn, setLoopOut, toggleLoop, clearLoop
   ])
 
   // ── Deselect when clicking empty space ───────────────────────────────────
@@ -175,6 +236,31 @@ export default function Timeline(): JSX.Element {
           <ToolbarButton icon={<Plus size={12} />} title="Zoom in" onClick={() => setPxPerSec(pxPerSec * 1.35)} />
           <ToolbarButton icon={<Maximize2 size={11} />} title="Zoom to fit (\)" onClick={zoomToFit} />
         </div>
+
+        <div className="w-px h-4 bg-[var(--border-subtle)] mx-1" />
+
+        {/* Snap toggle */}
+        <ToolbarButton
+          icon={<Magnet size={11} />}
+          title={snapEnabled ? 'Snapping on (Ctrl+\\)' : 'Snapping off (Ctrl+\\)'}
+          onClick={toggleSnap}
+          active={snapEnabled}
+        />
+
+        <div className="w-px h-4 bg-[var(--border-subtle)] mx-1" />
+
+        {/* Loop toggle */}
+        <ToolbarButton
+          icon={<Repeat size={11} />}
+          title={loopEnabled ? 'Loop on (Ctrl+L) — I to set in, O to set out' : 'Loop off (Ctrl+L)'}
+          onClick={toggleLoop}
+          active={loopEnabled}
+        />
+        {(loopIn !== null || loopOut !== null) && (
+          <span className="text-[10px] font-mono text-[var(--accent-bright)] select-none">
+            {loopIn !== null ? formatTimecode(loopIn).slice(0, 7) : '--:--'} – {loopOut !== null ? formatTimecode(loopOut).slice(0, 7) : '--:--'}
+          </span>
+        )}
 
         <div className="flex-1" />
 
@@ -221,6 +307,7 @@ export default function Timeline(): JSX.Element {
               scrollLeft={scrollLeft}
               contentWidth={contentWidth}
               selectedClipId={selectedClipId}
+              selectedClipIds={selectedClipIds}
             />
           ))}
 
@@ -233,6 +320,22 @@ export default function Timeline(): JSX.Element {
             </div>
           )}
         </div>
+
+        {/* ── Loop region overlay ─────────────────────────────────────────── */}
+        {loopIn !== null && loopOut !== null && loopOut > loopIn && (
+          <div
+            className="absolute pointer-events-none z-10"
+            style={{
+              left:   HEADER_WIDTH + loopIn  * pxPerSec,
+              width:  (loopOut - loopIn) * pxPerSec,
+              top:    RULER_HEIGHT,
+              height: totalTrackHeight,
+              backgroundColor: loopEnabled ? 'rgba(168,85,247,0.12)' : 'rgba(168,85,247,0.06)',
+              borderLeft:  '1px solid rgba(168,85,247,0.6)',
+              borderRight: '1px solid rgba(168,85,247,0.6)'
+            }}
+          />
+        )}
 
         {/* ── Playhead line ──────────────────────────────────────────────── */}
         <div
@@ -250,19 +353,26 @@ export default function Timeline(): JSX.Element {
 // ── Sub-component ──────────────────────────────────────────────────────────
 
 function ToolbarButton({
-  icon, title, onClick, disabled = false
+  icon, title, onClick, disabled = false, active = false
 }: {
   icon: React.ReactNode
   title: string
   onClick: () => void
   disabled?: boolean
+  active?: boolean
 }): JSX.Element {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors duration-75 active:scale-90"
+      className={cn(
+        'flex items-center justify-center w-6 h-6 rounded transition-colors duration-75 active:scale-90',
+        active
+          ? 'text-[var(--accent-light)] bg-[var(--accent-glow)]'
+          : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]',
+        'disabled:opacity-30 disabled:cursor-not-allowed'
+      )}
     >
       {icon}
     </button>

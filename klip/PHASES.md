@@ -23,8 +23,23 @@
 - [x] Persist media bin across sessions (localStorage via Zustand persist)
 - [x] Missing file detection on launch (marks isMissing, no relink UI yet)
 - [ ] Relink dialog for missing files
-- [ ] Source clip viewer (click clip → shows in preview area)
-- [ ] Music library panel (SQLite-backed, scans a folder)
+- [x] **Source Clip Viewer** — double-click a media bin clip to open a dedicated preview modal
+  - [x] Full playback with play/pause, frame step, scrub bar
+  - [x] I key = set in-point, O key = set out-point; purple region shown on scrub bar
+  - [x] Timecode display: in-point · current · out-point · selection duration
+  - [x] "Add to Timeline" button places trimmed clip at playhead or end of track
+  - [x] In/out points remembered per clip within the session
+  - [x] Keyboard: Space = play/pause, I/O = in/out, ←/→ = ±1 frame, Esc = close
+- [x] **Music Library** — sidebar "Music" tab
+  - [x] Tracks stored via Zustand persist (localStorage); fields: id, title, artist, duration, filePath, tags
+  - [x] Import via file picker or drag-and-drop (MP3, WAV, FLAC, AAC, M4A, OGG)
+  - [x] Auto-parse "Artist - Title" from file name on import
+  - [x] Track list with duration, artist, inline tag pills
+  - [x] Search by title, artist, or tag (live filter)
+  - [x] Inline tag editor per track (add/remove freeform tags)
+  - [x] Click play button to preview a track; click again to stop
+  - [x] Drag a track directly onto the music lane on the timeline
+  - [x] "Add to Timeline" per-track button
 - [ ] Proxy file generation for large 4K sources
 
 ## Phase 3a — Timeline Foundation ✅
@@ -58,6 +73,14 @@
 - [x] Playhead auto-scrolls timeline during playback
 - [x] Progress bar in preview (clickable scrub)
 - [x] Fullscreen button (native video fullscreen)
+- [x] **Loop playback** — I = set loop in, O = set loop out, Ctrl+L = toggle loop on/off
+  - [x] Purple region shown on both timeline ruler and preview scrub bar
+  - [x] Loop repeats seamlessly during playback (rAF + gap-advance checked)
+  - [x] Toolbar shows current in/out timecodes; Escape clears the loop
+- [x] **Quick Render Preview** — ⚡ button in preview controls
+  - [x] Runs FFmpeg in background at 720p / CRF 32 / ultrafast to a temp file
+  - [x] Progress overlay with animated fill bar shown during render
+  - [x] Rendered file auto-plays in an overlay panel when done; close to return to editing
 
 ## Phase 5 — Audio ✅
 - [x] Waveform rendering for audio clips on timeline (Web Audio API, canvas-based)
@@ -85,5 +108,5 @@
 - [ ] Tutorial / onboarding overlay
 - [ ] Settings panel: output resolution, frame rate, proxy storage
 - [ ] Keyboard shortcut reference panel
-- [ ] Auto-save project
-- [ ] Recent projects list
+- [x] Auto-save project (every 2 min to project file when path exists; Ctrl+S / Ctrl+Shift+S to save/save-as)
+- [x] Recent projects list (stored in userData/recent-projects.json; shown on welcome screen with relative timestamps)

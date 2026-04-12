@@ -5,6 +5,7 @@ import { loadWindowState, saveWindowState } from './windowState'
 import { registerWindowHandlers } from './ipc/windowHandlers'
 import { registerMediaHandlers } from './ipc/mediaHandlers'
 import { registerExportHandlers } from './ipc/exportHandlers'
+import { registerProjectHandlers } from './ipc/projectHandlers'
 import { registerKlipScheme, registerLocalFileProtocol } from './localFileProtocol'
 
 // Must be called synchronously before app.whenReady()
@@ -72,6 +73,7 @@ function createWindow(): void {
   registerWindowHandlers(mainWindow)
   registerMediaHandlers()
   registerExportHandlers(mainWindow)
+  registerProjectHandlers()
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])

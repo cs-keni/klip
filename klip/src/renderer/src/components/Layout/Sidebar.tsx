@@ -1,8 +1,9 @@
 import { useState, type ReactNode } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Film, Music, Upload } from 'lucide-react'
+import { Film, Music } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import MediaBin from '@/components/MediaBin/MediaBin'
+import MusicLibrary from '@/components/MediaBin/MusicLibrary'
 
 type Tab = 'media' | 'music'
 
@@ -36,12 +37,7 @@ export default function Sidebar(): JSX.Element {
             </TabPane>
           ) : (
             <TabPane key="music">
-              <EmptyState
-                icon={<Music size={22} className="text-[var(--text-muted)]" />}
-                title="Music Library"
-                description="Add royalty-free tracks to your library"
-                action={{ label: 'Add Music', icon: <Upload size={13} />, onClick: () => {} }}
-              />
+              <MusicLibrary />
             </TabPane>
           )}
         </AnimatePresence>
@@ -92,35 +88,3 @@ function TabPane({ children }: { children: ReactNode }): JSX.Element {
   )
 }
 
-function EmptyState({
-  icon,
-  title,
-  description,
-  action
-}: {
-  icon: ReactNode
-  title: string
-  description: string
-  action?: { label: string; icon?: ReactNode; onClick: () => void }
-}): JSX.Element {
-  return (
-    <div className="flex flex-col items-center justify-center h-full gap-3 p-6 text-center min-h-[200px]">
-      <div className="w-12 h-12 rounded-xl bg-[var(--bg-elevated)] flex items-center justify-center">
-        {icon}
-      </div>
-      <div>
-        <p className="text-sm font-medium text-[var(--text-secondary)]">{title}</p>
-        <p className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">{description}</p>
-      </div>
-      {action && (
-        <button
-          onClick={action.onClick}
-          className="mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)] hover:border-[var(--border-strong)] transition-colors duration-100 active:scale-[0.97]"
-        >
-          {action.icon}
-          {action.label}
-        </button>
-      )}
-    </div>
-  )
-}

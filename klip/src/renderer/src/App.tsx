@@ -3,9 +3,11 @@ import TitleBar from './components/TitleBar/TitleBar'
 import WelcomeScreen from './components/WelcomeScreen/WelcomeScreen'
 import AppLayout from './components/Layout/AppLayout'
 import { useAppStore } from './stores/appStore'
+import { useProjectIO } from './hooks/useProjectIO'
 
 export default function App(): JSX.Element {
   const view = useAppStore((s) => s.view)
+  useProjectIO()
 
   return (
     <div className="app-root">

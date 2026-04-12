@@ -8,6 +8,7 @@ import TimelinePanel from './TimelinePanel'
 import TopToolbar from './TopToolbar'
 import ResizeHandle from './ResizeHandle'
 import ExportDialog from '@/components/Export/ExportDialog'
+import SourceClipViewer from '@/components/MediaBin/SourceClipViewer'
 import type { TimelineClip, TextSettings } from '@/types/timeline'
 
 const SIDEBAR_MIN = 180
@@ -79,6 +80,8 @@ export default function AppLayout(): JSX.Element {
       <AnimatePresence>
         {showExport && <ExportDialog onClose={() => setShowExport(false)} />}
       </AnimatePresence>
+
+      <SourceClipViewer />
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Sidebar */}
