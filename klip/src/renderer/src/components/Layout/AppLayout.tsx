@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
+import { useMediaStore } from '@/stores/mediaStore'
 import Sidebar from './Sidebar'
 import PreviewPanel from './PreviewPanel'
 import TimelinePanel from './TimelinePanel'
@@ -16,6 +17,10 @@ const TIMELINE_DEFAULT = 220
 export default function AppLayout(): JSX.Element {
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT)
   const [timelineHeight, setTimelineHeight] = useState(TIMELINE_DEFAULT)
+  const { checkMissingFiles } = useMediaStore()
+
+  // On launch, verify that all persisted file paths still exist on disk
+  useEffect(() => { checkMissingFiles() }, [checkMissingFiles])
 
   const resizeSidebar = useCallback((delta: number) => {
     setSidebarWidth((w) => Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, w + delta)))

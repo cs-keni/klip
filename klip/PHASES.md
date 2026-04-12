@@ -19,11 +19,12 @@
 - [x] Delete key removes selected clip
 - [x] Audio file support (MP3, WAV, AAC, FLAC, OGG, M4A)
 
-## Phase 2b — Media Library Polish (deferred)
-- [ ] Missing file detection and relink dialog
-- [ ] Persist media bin across sessions (project file)
-- [ ] Music library panel (SQLite-backed, scans a folder)
+## Phase 2b — Media Library Polish (partial)
+- [x] Persist media bin across sessions (localStorage via Zustand persist)
+- [x] Missing file detection on launch (marks isMissing, no relink UI yet)
+- [ ] Relink dialog for missing files
 - [ ] Source clip viewer (click clip → shows in preview area)
+- [ ] Music library panel (SQLite-backed, scans a folder)
 - [ ] Proxy file generation for large 4K sources
 
 ## Phase 3a — Timeline Foundation ✅
@@ -45,15 +46,18 @@
 - [x] Trim handles: drag left/right edge to trim start/end
 - [x] Snap: clip edges and playhead snap to other clip edges (8px threshold)
 - [x] Split clip at playhead (S key)
-- [x] Ripple delete: remove clip and close gap (Shift+Delete)
+- [ ] Ripple delete: remove clip and close gap — deferred (floating point gap issue)
 - [ ] Multi-select: Shift+click; delete/move multiple at once (deferred)
 
-## Phase 4 — Preview Player
-- [ ] Video playback in the preview panel (play/pause, seek)
-- [ ] Playhead drives preview (scrub → see frame)
-- [ ] Play renders timeline in sequence (clip A → clip B)
-- [ ] Keyboard: Space = play/pause, J/K/L shuttle, left/right arrow = step frame
-- [ ] Current timecode display synced to playback
+## Phase 4 — Preview Player ✅
+- [x] Video playback in the preview panel (play/pause, seek)
+- [x] Playhead drives preview (scrub → see frame)
+- [x] Play renders timeline in sequence (clip A → clip B), gap advance, image/color clip passthrough
+- [x] Keyboard: Space = play/pause, L = play, K = pause, J = seek back 10s, ←/→ = ±1 frame
+- [x] Current timecode display synced to playback
+- [x] Playhead auto-scrolls timeline during playback
+- [x] Progress bar in preview (clickable scrub)
+- [x] Fullscreen button (native video fullscreen)
 
 ## Phase 5 — Audio
 - [ ] Waveform rendering for audio/video clips on timeline

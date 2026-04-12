@@ -1,20 +1,24 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
 import { Minus, Plus, Maximize2, Undo2, Redo2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { formatTimecode } from '@/lib/mediaUtils'
 import { useTimelineStore } from '@/stores/timelineStore'
 import { HEADER_WIDTH, TRACK_HEIGHT } from '@/types/timeline'
 import TimelineRuler from './TimelineRuler'
 import TrackRow from './TrackRow'
 
-const RULER_HEIGHT = 28
-const MIN_PX_PER_SEC = 2
-const MAX_PX_PER_SEC = 1000
+const RULER_HEIGHT    = 28
+const MIN_PX_PER_SEC  = 2
+const MAX_PX_PER_SEC  = 1000
+const FRAME           = 1 / 30   // one frame at 30fps
+const SCROLL_MARGIN   = 80       // px to keep playhead from viewport edge during playback
 
 export default function Timeline(): JSX.Element {
   const {
     tracks, clips,
     playheadTime, pxPerSec,
     selectedClipId,
+    isPlaying, setIsPlaying,
     past, future,
     setPlayheadTime, setPxPerSec,
     removeClip, selectClip,
@@ -28,15 +32,30 @@ export default function Timeline(): JSX.Element {
 
   // ── Derived dimensions ────────────────────────────────────────────────────
 
-  const lastClipEnd = clips.reduce((max, c) => Math.max(max, c.startTime + c.duration), 0)
-  const totalDuration = Math.max(lastClipEnd + 60, 120)
-  const contentWidth = totalDuration * pxPerSec
+  const lastClipEnd    = clips.reduce((max, c) => Math.max(max, c.startTime + c.duration), 0)
+  const totalDuration  = Math.max(lastClipEnd + 60, 120)
+  const contentWidth   = totalDuration * pxPerSec
 
   // ── Scroll sync ───────────────────────────────────────────────────────────
 
   const handleScroll = useCallback(() => {
     setScrollLeft(scrollRef.current?.scrollLeft ?? 0)
   }, [])
+
+  // ── Auto-scroll during playback ───────────────────────────────────────────
+
+  useEffect(() => {
+    if (!isPlaying) return
+    const el = scrollRef.current
+    if (!el) return
+
+    const playheadX   = HEADER_WIDTH + playheadTime * pxPerSec
+    const visibleEnd  = el.scrollLeft + el.clientWidth
+
+    if (playheadX > visibleEnd - SCROLL_MARGIN) {
+      el.scrollLeft = playheadX - HEADER_WIDTH - SCROLL_MARGIN
+    }
+  }, [playheadTime, isPlaying, pxPerSec])
 
   // ── Wheel: horizontal scroll OR zoom ─────────────────────────────────────
 
@@ -50,7 +69,6 @@ export default function Timeline(): JSX.Element {
         const factor = e.deltaY > 0 ? 0.85 : 1.18
         setPxPerSec(Math.max(MIN_PX_PER_SEC, Math.min(MAX_PX_PER_SEC, pxPerSec * factor)))
       } else {
-        // Reroute vertical scroll → horizontal scroll
         e.preventDefault()
         el!.scrollLeft += e.deltaY + e.deltaX
       }
@@ -74,6 +92,32 @@ export default function Timeline(): JSX.Element {
       const tag = (e.target as HTMLElement).tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
 
+      // ── Transport ──────────────────────────────────────────────────────
+      if (e.key === ' ') {
+        e.preventDefault()
+        setIsPlaying(!isPlaying)
+        return
+      }
+      // L = play, K = pause, J = seek back 10s
+      if (e.key === 'l' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault(); if (!isPlaying) setIsPlaying(true); return
+      }
+      if (e.key === 'k' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault(); setIsPlaying(false); return
+      }
+      if (e.key === 'j' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault(); setIsPlaying(false); setPlayheadTime(Math.max(0, playheadTime - 10)); return
+      }
+
+      // ── Frame step ─────────────────────────────────────────────────────
+      if (e.key === 'ArrowRight' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        e.preventDefault(); setPlayheadTime(playheadTime + FRAME); return
+      }
+      if (e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        e.preventDefault(); setPlayheadTime(Math.max(0, playheadTime - FRAME)); return
+      }
+
+      // ── Editing ────────────────────────────────────────────────────────
       if (e.key === '\\') { e.preventDefault(); zoomToFit(); return }
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') {
         e.preventDefault(); undo(); return
@@ -91,9 +135,15 @@ export default function Timeline(): JSX.Element {
         e.preventDefault(); splitClip(selectedClipId); return
       }
     }
+
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [zoomToFit, undo, redo, selectedClipId, removeClip, splitClip, rippleDelete])
+  }, [
+    isPlaying, setIsPlaying,
+    playheadTime, setPlayheadTime,
+    zoomToFit, undo, redo,
+    selectedClipId, removeClip, splitClip, rippleDelete
+  ])
 
   // ── Deselect when clicking empty space ───────────────────────────────────
 
@@ -101,10 +151,9 @@ export default function Timeline(): JSX.Element {
     if (e.target === e.currentTarget) selectClip(null)
   }
 
-  // ── Playhead line position ────────────────────────────────────────────────
-  // Left offset within the scrollable content area (not the viewport)
-  const playheadPx = HEADER_WIDTH + playheadTime * pxPerSec
+  // ── Geometry ──────────────────────────────────────────────────────────────
 
+  const playheadPx       = HEADER_WIDTH + playheadTime * pxPerSec
   const totalTrackHeight = tracks.reduce((h, t) => h + TRACK_HEIGHT[t.type], 0)
 
   return (
@@ -112,48 +161,23 @@ export default function Timeline(): JSX.Element {
       {/* ── Toolbar ──────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-1 px-2 h-8 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)] shrink-0">
         <div className="flex items-center gap-0.5">
-          <ToolbarButton
-            icon={<Undo2 size={12} />}
-            title="Undo (Ctrl+Z)"
-            onClick={undo}
-            disabled={past.length === 0}
-          />
-          <ToolbarButton
-            icon={<Redo2 size={12} />}
-            title="Redo (Ctrl+Shift+Z)"
-            onClick={redo}
-            disabled={future.length === 0}
-          />
+          <ToolbarButton icon={<Undo2 size={12} />} title="Undo (Ctrl+Z)" onClick={undo} disabled={past.length === 0} />
+          <ToolbarButton icon={<Redo2 size={12} />} title="Redo (Ctrl+Shift+Z)" onClick={redo} disabled={future.length === 0} />
         </div>
 
         <div className="w-px h-4 bg-[var(--border-subtle)] mx-1" />
 
         <div className="flex items-center gap-0.5">
-          <ToolbarButton
-            icon={<Minus size={12} />}
-            title="Zoom out"
-            onClick={() => setPxPerSec(pxPerSec * 0.75)}
-          />
+          <ToolbarButton icon={<Minus size={12} />} title="Zoom out" onClick={() => setPxPerSec(pxPerSec * 0.75)} />
           <span className="text-[10px] font-mono text-[var(--text-muted)] w-12 text-center select-none">
-            {pxPerSec >= 100
-              ? `${Math.round(pxPerSec)}px/s`
-              : `${pxPerSec.toFixed(1)}px/s`}
+            {pxPerSec >= 100 ? `${Math.round(pxPerSec)}px/s` : `${pxPerSec.toFixed(1)}px/s`}
           </span>
-          <ToolbarButton
-            icon={<Plus size={12} />}
-            title="Zoom in"
-            onClick={() => setPxPerSec(pxPerSec * 1.35)}
-          />
-          <ToolbarButton
-            icon={<Maximize2 size={11} />}
-            title="Zoom to fit (\)"
-            onClick={zoomToFit}
-          />
+          <ToolbarButton icon={<Plus size={12} />} title="Zoom in" onClick={() => setPxPerSec(pxPerSec * 1.35)} />
+          <ToolbarButton icon={<Maximize2 size={11} />} title="Zoom to fit (\)" onClick={zoomToFit} />
         </div>
 
         <div className="flex-1" />
 
-        {/* Playhead time display */}
         <span className="text-[10px] font-mono text-[var(--text-muted)] select-none">
           {formatTimecode(playheadTime)}
         </span>
@@ -166,26 +190,23 @@ export default function Timeline(): JSX.Element {
         onScroll={handleScroll}
         onClick={handleContainerClick}
       >
-        {/* Inner container — wide enough for all content */}
         <div style={{ minWidth: HEADER_WIDTH + contentWidth }}>
-          {/* ── Ruler row ──────────────────────────────────────────────── */}
+          {/* ── Ruler ──────────────────────────────────────────────────── */}
           <div
             className="flex border-b border-[var(--border)] shrink-0"
             style={{ height: RULER_HEIGHT, minWidth: HEADER_WIDTH + contentWidth }}
           >
-            {/* Corner cell */}
             <div
               className="shrink-0 bg-[var(--bg-elevated)] border-r border-[var(--border-subtle)] z-10"
               style={{ width: HEADER_WIDTH, position: 'sticky', left: 0 }}
             />
-            {/* Ruler */}
             <TimelineRuler
               pxPerSec={pxPerSec}
               totalDuration={totalDuration}
               playheadTime={playheadTime}
               scrollLeft={scrollLeft}
               onScrub={setPlayheadTime}
-              onScrubStart={() => setIsScrubbing(true)}
+              onScrubStart={() => { setIsPlaying(false); setIsScrubbing(true) }}
               onScrubEnd={() => setIsScrubbing(false)}
             />
           </div>
@@ -203,7 +224,6 @@ export default function Timeline(): JSX.Element {
             />
           ))}
 
-          {/* Empty-state hint */}
           {clips.length === 0 && (
             <div className="flex pointer-events-none py-4">
               <div style={{ width: HEADER_WIDTH, flexShrink: 0 }} />
@@ -214,31 +234,23 @@ export default function Timeline(): JSX.Element {
           )}
         </div>
 
-        {/* ── Playhead line (inside scroll container, full track height) ── */}
+        {/* ── Playhead line ──────────────────────────────────────────────── */}
         <div
           className={cn(
             'absolute top-0 w-px pointer-events-none z-20 transition-none',
             isScrubbing ? 'bg-[var(--accent-bright)]' : 'bg-[var(--accent)]'
           )}
-          style={{
-            left: playheadPx,
-            // Start below ruler, span all tracks
-            top: RULER_HEIGHT,
-            height: totalTrackHeight
-          }}
+          style={{ left: playheadPx, top: RULER_HEIGHT, height: totalTrackHeight }}
         />
       </div>
     </div>
   )
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ── Sub-component ──────────────────────────────────────────────────────────
 
 function ToolbarButton({
-  icon,
-  title,
-  onClick,
-  disabled = false
+  icon, title, onClick, disabled = false
 }: {
   icon: React.ReactNode
   title: string
@@ -255,12 +267,4 @@ function ToolbarButton({
       {icon}
     </button>
   )
-}
-
-function formatTimecode(seconds: number): string {
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  const s = Math.floor(seconds % 60)
-  const f = Math.floor((seconds % 1) * 30) // 30fps frames
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}:${String(f).padStart(2, '0')}`
 }

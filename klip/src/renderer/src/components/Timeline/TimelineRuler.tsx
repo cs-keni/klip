@@ -81,7 +81,7 @@ export default function TimelineRuler({
   return (
     <div
       ref={rulerRef}
-      className="relative h-full cursor-col-resize select-none overflow-hidden"
+      className="relative h-full cursor-col-resize select-none"
       style={{ width: contentWidth }}
       onMouseDown={handleMouseDown}
     >

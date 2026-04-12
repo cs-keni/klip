@@ -1,7 +1,6 @@
 import { protocol } from 'electron'
 import { createReadStream, statSync } from 'fs'
 import { extname } from 'path'
-import { Readable } from 'stream'
 
 const MIME_TYPES: Record<string, string> = {
   '.mp4': 'video/mp4',
@@ -88,7 +87,14 @@ export function registerLocalFileProtocol(): void {
         const chunkSize = end - start + 1
 
         const nodeStream = createReadStream(filePath, { start, end })
-        const webStream = Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>
+        const webStream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            nodeStream.on('data', (chunk: Buffer) => { try { controller.enqueue(chunk) } catch {} })
+            nodeStream.on('end', () => { try { controller.close() } catch {} })
+            nodeStream.on('error', (err) => { try { controller.error(err) } catch {} })
+          },
+          cancel() { nodeStream.destroy() }
+        })
 
         return new Response(webStream, {
           status: 206,
@@ -102,7 +108,14 @@ export function registerLocalFileProtocol(): void {
 
       // Full file response
       const nodeStream = createReadStream(filePath)
-      const webStream = Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>
+      const webStream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          nodeStream.on('data', (chunk: Buffer) => { try { controller.enqueue(chunk) } catch {} })
+          nodeStream.on('end', () => { try { controller.close() } catch {} })
+          nodeStream.on('error', (err) => { try { controller.error(err) } catch {} })
+        },
+        cancel() { nodeStream.destroy() }
+      })
 
       return new Response(webStream, {
         status: 200,

@@ -83,7 +83,18 @@ export default function TrackRow({
       const rect = laneRef.current!.getBoundingClientRect()
       const localX = e.clientX - rect.left
       const contentX = localX + scrollLeft
-      const startTime = Math.max(0, contentX / pxPerSec)
+      const rawTime = Math.max(0, contentX / pxPerSec)
+
+      // Snap to existing clip edges (same 8px threshold as TimelineClipView)
+      const SNAP_PX = 8
+      const snapThreshold = SNAP_PX / pxPerSec
+      const snapPoints = [0, ...clips.flatMap((c) => [c.startTime, c.startTime + c.duration])]
+      let startTime = rawTime
+      let bestDist = snapThreshold
+      for (const p of snapPoints) {
+        const d = Math.abs(rawTime - p)
+        if (d < bestDist) { bestDist = d; startTime = p }
+      }
 
       const newClip: TimelineClip = {
         id: crypto.randomUUID(),

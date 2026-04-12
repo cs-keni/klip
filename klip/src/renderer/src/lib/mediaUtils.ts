@@ -31,6 +31,16 @@ export function getMediaTypeFromPath(filePath: string): 'video' | 'audio' | 'ima
   return 'video'
 }
 
+/** HH:MM:SS:FF timecode (30 fps frames). */
+export function formatTimecode(seconds: number): string {
+  const s = Math.max(0, seconds)
+  const h  = Math.floor(s / 3600)
+  const m  = Math.floor((s % 3600) / 60)
+  const sc = Math.floor(s % 60)
+  const f  = Math.floor((s % 1) * 30)
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sc).padStart(2,'0')}:${String(f).padStart(2,'0')}`
+}
+
 export function formatDuration(seconds: number): string {
   if (!isFinite(seconds) || seconds <= 0) return '0:00'
   const h = Math.floor(seconds / 3600)

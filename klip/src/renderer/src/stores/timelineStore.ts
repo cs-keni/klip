@@ -29,6 +29,10 @@ interface TimelineState {
   splitClip: (id: string) => void
   rippleDelete: (id: string) => void
 
+  // ── Playback ──────────────────────────────────────────────────────────────
+  isPlaying: boolean
+  setIsPlaying: (v: boolean) => void
+
   // ── Playhead / zoom ───────────────────────────────────────────────────────
   setPlayheadTime: (time: number) => void
   setPxPerSec: (pxPerSec: number) => void
@@ -55,8 +59,11 @@ export const useTimelineStore = create<TimelineState>((set) => ({
   selectedClipId: null,
   playheadTime: 0,
   pxPerSec: 80,
+  isPlaying: false,
   past: [],
   future: [],
+
+  setIsPlaying: (v) => set({ isPlaying: v }),
 
   // ── Clips ────────────────────────────────────────────────────────────────
 
