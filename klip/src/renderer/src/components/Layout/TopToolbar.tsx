@@ -3,7 +3,11 @@ import { MousePointer2, Scissors, Undo2, Redo2, ZoomOut, ZoomIn, Save, Settings,
 import { cn } from '@/lib/utils'
 import { Tooltip } from '@/components/ui/tooltip'
 
-export default function TopToolbar(): JSX.Element {
+interface TopToolbarProps {
+  onExportClick: () => void
+}
+
+export default function TopToolbar({ onExportClick }: TopToolbarProps): JSX.Element {
   return (
     <div className="flex items-center h-[42px] px-3 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)] gap-1 shrink-0">
 
@@ -34,7 +38,10 @@ export default function TopToolbar(): JSX.Element {
 
       {/* Export CTA */}
       <Tooltip content="Export video">
-        <button className="flex items-center gap-1.5 px-3 h-7 rounded text-xs font-semibold bg-[var(--accent)] text-white hover:bg-[var(--accent-light)] transition-colors duration-100 active:scale-[0.96] shrink-0">
+        <button
+          onClick={onExportClick}
+          className="flex items-center gap-1.5 px-3 h-7 rounded text-xs font-semibold bg-[var(--accent)] text-white hover:bg-[var(--accent-light)] transition-colors duration-100 active:scale-[0.96] shrink-0"
+        >
           <Play size={11} />
           Export
         </button>

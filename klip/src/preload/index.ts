@@ -30,6 +30,40 @@ const api = {
     /** Reveal a file in Windows Explorer / macOS Finder. */
     revealInExplorer: (filePath: string): void =>
       ipcRenderer.send('media:reveal-in-explorer', filePath)
+  },
+
+  export: {
+    /** Open a folder picker; returns the chosen folder path or null if cancelled. */
+    pickOutputFolder: (): Promise<string | null> =>
+      ipcRenderer.invoke('export:pick-output-folder'),
+
+    /** Start an export job. Progress/done/error arrive via onProgress/onDone/onError. */
+    start: (job: unknown): Promise<void> =>
+      ipcRenderer.invoke('export:start', job),
+
+    /** Cancel the running export. */
+    cancel: (): void => ipcRenderer.send('export:cancel'),
+
+    /** Subscribe to progress updates. Returns an unsubscribe function. */
+    onProgress: (cb: (p: { progress: number; fps: number; speed: string; etaSecs: number }) => void): (() => void) => {
+      const handler = (_: unknown, p: unknown) => cb(p as { progress: number; fps: number; speed: string; etaSecs: number })
+      ipcRenderer.on('export:progress', handler)
+      return () => ipcRenderer.removeListener('export:progress', handler)
+    },
+
+    /** Subscribe to completion event. Returns an unsubscribe function. */
+    onDone: (cb: (outputPath: string) => void): (() => void) => {
+      const handler = (_: unknown, p: unknown) => cb(p as string)
+      ipcRenderer.on('export:done', handler)
+      return () => ipcRenderer.removeListener('export:done', handler)
+    },
+
+    /** Subscribe to error event. Returns an unsubscribe function. */
+    onError: (cb: (message: string) => void): (() => void) => {
+      const handler = (_: unknown, p: unknown) => cb(p as string)
+      ipcRenderer.on('export:error', handler)
+      return () => ipcRenderer.removeListener('export:error', handler)
+    }
   }
 }
 

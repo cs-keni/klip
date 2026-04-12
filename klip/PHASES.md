@@ -74,11 +74,12 @@
 - [ ] Speed ramp (0.25×–4×)
 - [ ] Color grade: basic LUT or brightness/contrast/saturation
 
-## Phase 7 — Export
-- [ ] Export to MP4 via FFmpeg (bundled)
-- [ ] Preset: YouTube 1080p60 / 1440p60
-- [ ] Progress bar with estimated time
-- [ ] Chapter markers from timeline regions
+## Phase 7 — Export ✅
+- [x] Export to MP4 via FFmpeg (ffmpeg-static; install from Windows terminal for Windows binary)
+- [x] Presets: YouTube 1080p60, 1440p60, 1080p30, Preview/Draft
+- [x] Progress bar with fps, speed, ETA
+- [x] Handles video clips, image clips, color clips, audio/music track clips, gaps
+- [ ] Chapter markers from timeline regions — deferred
 
 ## Phase 8 — Polish & Settings
 - [ ] Tutorial / onboarding overlay

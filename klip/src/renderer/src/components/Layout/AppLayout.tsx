@@ -1,10 +1,12 @@
 import { useState, useCallback, useEffect } from 'react'
+import { AnimatePresence } from 'framer-motion'
 import { useMediaStore } from '@/stores/mediaStore'
 import Sidebar from './Sidebar'
 import PreviewPanel from './PreviewPanel'
 import TimelinePanel from './TimelinePanel'
 import TopToolbar from './TopToolbar'
 import ResizeHandle from './ResizeHandle'
+import ExportDialog from '@/components/Export/ExportDialog'
 
 const SIDEBAR_MIN = 180
 const SIDEBAR_MAX = 480
@@ -15,8 +17,9 @@ const TIMELINE_MAX = 520
 const TIMELINE_DEFAULT = 220
 
 export default function AppLayout(): JSX.Element {
-  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT)
+  const [sidebarWidth, setSidebarWidth]     = useState(SIDEBAR_DEFAULT)
   const [timelineHeight, setTimelineHeight] = useState(TIMELINE_DEFAULT)
+  const [showExport, setShowExport]         = useState(false)
   const { checkMissingFiles } = useMediaStore()
 
   // On launch, verify that all persisted file paths still exist on disk
@@ -33,7 +36,11 @@ export default function AppLayout(): JSX.Element {
 
   return (
     <div className="flex flex-col h-full bg-[var(--bg-base)]">
-      <TopToolbar />
+      <TopToolbar onExportClick={() => setShowExport(true)} />
+
+      <AnimatePresence>
+        {showExport && <ExportDialog onClose={() => setShowExport(false)} />}
+      </AnimatePresence>
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Sidebar */}
