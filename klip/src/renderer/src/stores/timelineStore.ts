@@ -1,22 +1,27 @@
 import { create } from 'zustand'
-import type { Track, TimelineClip, HistoryEntry } from '@/types/timeline'
+import type {
+  Track, TimelineClip, HistoryEntry, Transition,
+  TextSettings, ColorSettings, CropSettings
+} from '@/types/timeline'
 
 type TrimPatch = Partial<Pick<TimelineClip, 'startTime' | 'trimStart' | 'duration'>>
 
 const DEFAULT_TRACKS: Track[] = [
-  { id: 'v1', type: 'video', name: 'Video 1', isLocked: false, isMuted: false, isSolo: false },
-  { id: 'a1', type: 'audio', name: 'Audio 1', isLocked: false, isMuted: false, isSolo: false },
-  { id: 'm1', type: 'music', name: 'Music',   isLocked: false, isMuted: false, isSolo: false }
+  { id: 'v1',      type: 'video',   name: 'Video 1', isLocked: false, isMuted: false, isSolo: false },
+  { id: 'a1',      type: 'audio',   name: 'Audio 1', isLocked: false, isMuted: false, isSolo: false },
+  { id: 'm1',      type: 'music',   name: 'Music',   isLocked: false, isMuted: false, isSolo: false },
+  { id: 'overlay1',type: 'overlay', name: 'Text',    isLocked: false, isMuted: false, isSolo: false }
 ]
 
 interface TimelineState {
   tracks: Track[]
   clips: TimelineClip[]
+  transitions: Transition[]
   selectedClipId: string | null
   playheadTime: number
   pxPerSec: number
 
-  // Undo / redo history (snapshots of tracks + clips)
+  // Undo / redo history
   past: HistoryEntry[]
   future: HistoryEntry[]
 
@@ -45,28 +50,40 @@ interface TimelineState {
   // ── Clip audio ────────────────────────────────────────────────────────────
   setClipVolume: (clipId: string, volume: number) => void
 
+  // ── Phase 6 clip actions ──────────────────────────────────────────────────
+  setClipSpeed:     (clipId: string, speed: number) => void
+  setTextSettings:  (clipId: string, settings: TextSettings) => void
+  setColorSettings: (clipId: string, settings: ColorSettings | undefined) => void
+  setCropSettings:  (clipId: string, settings: CropSettings | undefined) => void
+
+  // ── Transitions ───────────────────────────────────────────────────────────
+  addTransition:    (t: Transition) => void
+  removeTransition: (id: string) => void
+
   // ── History ───────────────────────────────────────────────────────────────
   undo: () => void
   redo: () => void
 }
 
-/** Deep-clone only the undoable slice of state. */
-function snapshot(state: Pick<TimelineState, 'tracks' | 'clips'>): HistoryEntry {
+/** Deep-clone the undoable slice of state. */
+function snapshot(state: Pick<TimelineState, 'tracks' | 'clips' | 'transitions'>): HistoryEntry {
   return {
-    tracks: state.tracks.map((t) => ({ ...t })),
-    clips: state.clips.map((c) => ({ ...c }))
+    tracks:      state.tracks.map((t) => ({ ...t })),
+    clips:       state.clips.map((c) => ({ ...c })),
+    transitions: state.transitions.map((t) => ({ ...t }))
   }
 }
 
 export const useTimelineStore = create<TimelineState>((set) => ({
-  tracks: DEFAULT_TRACKS,
-  clips: [],
+  tracks:         DEFAULT_TRACKS,
+  clips:          [],
+  transitions:    [],
   selectedClipId: null,
-  playheadTime: 0,
-  pxPerSec: 80,
-  isPlaying: false,
-  past: [],
-  future: [],
+  playheadTime:   0,
+  pxPerSec:       80,
+  isPlaying:      false,
+  past:           [],
+  future:         [],
 
   setIsPlaying: (v) => set({ isPlaying: v }),
 
@@ -85,6 +102,7 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       past: [...s.past.slice(-49), snapshot(s)],
       future: [],
       clips: s.clips.filter((c) => c.id !== id),
+      transitions: s.transitions.filter((t) => t.fromClipId !== id && t.toClipId !== id),
       selectedClipId: s.selectedClipId === id ? null : s.selectedClipId
     })),
 
@@ -106,10 +124,9 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       clips: s.clips.map((c) => {
         if (c.id !== id) return c
         const next = { ...c, ...patch }
-        // Clamp so nothing goes negative
         next.startTime = Math.max(0, next.startTime ?? c.startTime)
         next.trimStart = Math.max(0, next.trimStart ?? c.trimStart)
-        next.duration = Math.max(0.1, next.duration ?? c.duration)
+        next.duration  = Math.max(0.1, next.duration ?? c.duration)
         return next
       })
     })),
@@ -121,20 +138,27 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       const splitOffset = s.playheadTime - clip.startTime
       if (splitOffset <= 0.05 || splitOffset >= clip.duration - 0.05) return s
 
-      const left: TimelineClip = { ...clip, duration: splitOffset }
+      const left: TimelineClip  = { ...clip, duration: splitOffset }
       const right: TimelineClip = {
         ...clip,
         id: crypto.randomUUID(),
         startTime: s.playheadTime,
-        trimStart: clip.trimStart + splitOffset,
-        duration: clip.duration - splitOffset
+        trimStart: clip.trimStart + splitOffset * (clip.speed ?? 1),
+        duration:  clip.duration - splitOffset
       }
+
+      // Re-point any transition that crosses the split
+      const newTransitions = s.transitions.map((t) => {
+        if (t.fromClipId === clip.id) return { ...t, fromClipId: right.id }
+        return t
+      })
 
       return {
         past: [...s.past.slice(-49), snapshot(s)],
         future: [],
         selectedClipId: right.id,
-        clips: s.clips.flatMap((c) => (c.id === id ? [left, right] : [c]))
+        clips: s.clips.flatMap((c) => (c.id === id ? [left, right] : [c])),
+        transitions: newTransitions
       }
     }),
 
@@ -153,7 +177,8 @@ export const useTimelineStore = create<TimelineState>((set) => ({
             c.trackId === clip.trackId && c.startTime >= gapEnd - 0.001
               ? { ...c, startTime: c.startTime - clip.duration }
               : c
-          )
+          ),
+        transitions: s.transitions.filter((t) => t.fromClipId !== id && t.toClipId !== id)
       }
     }),
 
@@ -183,9 +208,67 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, isSolo: !t.isSolo } : t))
     })),
 
+  // ── Clip audio ────────────────────────────────────────────────────────────
+
   setClipVolume: (clipId, volume) =>
     set((s) => ({
-      clips: s.clips.map((c) => (c.id === clipId ? { ...c, volume: Math.max(0, Math.min(1, volume)) } : c))
+      clips: s.clips.map((c) =>
+        c.id === clipId ? { ...c, volume: Math.max(0, Math.min(1, volume)) } : c
+      )
+    })),
+
+  // ── Phase 6 clip actions ──────────────────────────────────────────────────
+
+  setClipSpeed: (clipId, speed) =>
+    set((s) => ({
+      past: [...s.past.slice(-49), snapshot(s)],
+      future: [],
+      clips: s.clips.map((c) =>
+        c.id === clipId ? { ...c, speed: Math.max(0.1, Math.min(16, speed)) } : c
+      )
+    })),
+
+  setTextSettings: (clipId, settings) =>
+    set((s) => ({
+      clips: s.clips.map((c) =>
+        c.id === clipId ? { ...c, textSettings: settings } : c
+      )
+    })),
+
+  setColorSettings: (clipId, settings) =>
+    set((s) => ({
+      clips: s.clips.map((c) =>
+        c.id === clipId ? { ...c, colorSettings: settings } : c
+      )
+    })),
+
+  setCropSettings: (clipId, settings) =>
+    set((s) => ({
+      clips: s.clips.map((c) =>
+        c.id === clipId ? { ...c, cropSettings: settings } : c
+      )
+    })),
+
+  // ── Transitions ───────────────────────────────────────────────────────────
+
+  addTransition: (t) =>
+    set((s) => {
+      // Replace any existing transition between the same pair
+      const filtered = s.transitions.filter(
+        (x) => !(x.fromClipId === t.fromClipId && x.toClipId === t.toClipId)
+      )
+      return {
+        past: [...s.past.slice(-49), snapshot(s)],
+        future: [],
+        transitions: [...filtered, t]
+      }
+    }),
+
+  removeTransition: (id) =>
+    set((s) => ({
+      past: [...s.past.slice(-49), snapshot(s)],
+      future: [],
+      transitions: s.transitions.filter((t) => t.id !== id)
     })),
 
   // ── History ──────────────────────────────────────────────────────────────
@@ -198,7 +281,8 @@ export const useTimelineStore = create<TimelineState>((set) => ({
         past: s.past.slice(0, -1),
         future: [snapshot(s), ...s.future.slice(0, 49)],
         tracks: prev.tracks,
-        clips: prev.clips
+        clips:  prev.clips,
+        transitions: prev.transitions
       }
     }),
 
@@ -210,7 +294,8 @@ export const useTimelineStore = create<TimelineState>((set) => ({
         past: [...s.past.slice(-49), snapshot(s)],
         future: s.future.slice(1),
         tracks: next.tracks,
-        clips: next.clips
+        clips:  next.clips,
+        transitions: next.transitions
       }
     })
 }))

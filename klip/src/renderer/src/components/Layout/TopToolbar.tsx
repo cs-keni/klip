@@ -1,13 +1,14 @@
 import { type ReactNode } from 'react'
-import { MousePointer2, Scissors, Undo2, Redo2, ZoomOut, ZoomIn, Save, Settings, HelpCircle, Play } from 'lucide-react'
+import { MousePointer2, Scissors, Undo2, Redo2, ZoomOut, ZoomIn, Save, Settings, HelpCircle, Play, Type } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip } from '@/components/ui/tooltip'
 
 interface TopToolbarProps {
   onExportClick: () => void
+  onAddTextClip: () => void
 }
 
-export default function TopToolbar({ onExportClick }: TopToolbarProps): JSX.Element {
+export default function TopToolbar({ onExportClick, onAddTextClip }: TopToolbarProps): JSX.Element {
   return (
     <div className="flex items-center h-[42px] px-3 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)] gap-1 shrink-0">
 
@@ -15,6 +16,17 @@ export default function TopToolbar({ onExportClick }: TopToolbarProps): JSX.Elem
       <ToolGroup>
         <ToolBtn icon={<MousePointer2 size={14} />} label="Select  V" active />
         <ToolBtn icon={<Scissors size={14} />} label="Razor / Split  S" />
+      </ToolGroup>
+
+      <ToolDivider />
+
+      {/* Overlay tools */}
+      <ToolGroup>
+        <ToolBtn
+          icon={<Type size={14} />}
+          label="Add Text Overlay  T"
+          onClick={onAddTextClip}
+        />
       </ToolGroup>
 
       <ToolDivider />
@@ -67,17 +79,20 @@ function ToolBtn({
   icon,
   label,
   active = false,
-  disabled = false
+  disabled = false,
+  onClick
 }: {
   icon: ReactNode
   label: string
   active?: boolean
   disabled?: boolean
+  onClick?: () => void
 }): JSX.Element {
   return (
     <Tooltip content={label}>
       <button
         disabled={disabled}
+        onClick={onClick}
         className={cn(
           'flex items-center justify-center w-7 h-7 rounded transition-all duration-100 active:scale-[0.93]',
           'disabled:opacity-35 disabled:pointer-events-none',

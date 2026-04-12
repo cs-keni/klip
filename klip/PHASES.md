@@ -67,12 +67,12 @@
 - [x] Audio/music track playback in preview (hidden <audio> element, wall-clock sync)
 - [ ] Audio normalization (detect loudness, suggest gain) — deferred
 
-## Phase 6 — Effects & Overlays
-- [ ] Crossfade / cut transitions between clips
-- [ ] Text overlay (title cards, lower thirds)
-- [ ] Digital zoom / crop (pan & scan)
-- [ ] Speed ramp (0.25×–4×)
-- [ ] Color grade: basic LUT or brightness/contrast/saturation
+## Phase 6 — Effects & Overlays ✅
+- [x] Text overlays: "T" toolbar button, overlay track, right-click text editor (content, size, color, bold/italic, alignment, position X/Y), preview via CSS absolutely-positioned div, export via FFmpeg drawtext filter
+- [x] Transitions: fade / dip-to-black between adjacent video clips; right-click context menu; preview opacity fade in rAF loop; export via FFmpeg fade=t=out/in filters
+- [x] Speed ramp: 0.25×–4× per clip; right-click speed buttons; preview via video.playbackRate; export via setpts + chained atempo
+- [x] Digital zoom / crop: zoom 1×–4×, pan X/Y per clip; preview via CSS scale+translate; export via FFmpeg crop filter
+- [x] Color grade: brightness/contrast/saturation per clip; preview via CSS filter; export via FFmpeg eq filter
 
 ## Phase 7 — Export ✅
 - [x] Export to MP4 via FFmpeg (ffmpeg-static; install from Windows terminal for Windows binary)

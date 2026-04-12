@@ -9,9 +9,10 @@ import { TRACK_HEIGHT, HEADER_WIDTH, type Track, type TimelineClip } from '@/typ
 import TimelineClipView from './TimelineClipView'
 
 const TRACK_ACCENT: Record<Track['type'], string> = {
-  video: '#a78bfa',
-  audio: '#60a5fa',
-  music: '#4ade80'
+  video:   '#a78bfa',
+  audio:   '#60a5fa',
+  music:   '#4ade80',
+  overlay: '#22d3ee'
 }
 
 interface TrackRowProps {
@@ -74,7 +75,8 @@ export default function TrackRow({
       setIsDragOver(false)
 
       const mediaClipId = e.dataTransfer.getData('application/klip-clip')
-      if (!mediaClipId || track.isLocked) return
+      // Overlay track only holds text clips — media bin clips don't go here
+      if (!mediaClipId || track.isLocked || track.type === 'overlay') return
 
       const mediaClip = mediaClips.find((c) => c.id === mediaClipId)
       if (!mediaClip) return

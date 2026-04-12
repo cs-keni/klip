@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo, type ReactNode } from 'react'
+import { useRef, useEffect, useMemo, type ReactNode, type CSSProperties } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Play, Pause, Volume2, Maximize2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -6,7 +6,7 @@ import { Tooltip } from '@/components/ui/tooltip'
 import { pathToFileUrl, formatTimecode } from '@/lib/mediaUtils'
 import { useTimelineStore } from '@/stores/timelineStore'
 import { useMediaStore } from '@/stores/mediaStore'
-import type { TimelineClip } from '@/types/timeline'
+import type { TimelineClip, TextSettings } from '@/types/timeline'
 
 /** Returns true if a track is effectively muted given the global solo state. */
 function isEffectivelyMuted(trackId: string, tracks: ReturnType<typeof useTimelineStore.getState>['tracks']): boolean {
@@ -20,7 +20,7 @@ function isEffectivelyMuted(trackId: string, tracks: ReturnType<typeof useTimeli
 export default function PreviewPanel(): JSX.Element {
   // ── Store ────────────────────────────────────────────────────────────────
   const {
-    tracks, clips: timelineClips,
+    tracks, clips: timelineClips, transitions,
     playheadTime, setPlayheadTime,
     isPlaying, setIsPlaying
   } = useTimelineStore()
@@ -40,7 +40,7 @@ export default function PreviewPanel(): JSX.Element {
     [timelineClips, videoTrack]
   )
 
-  // ── Derived: audio + music track clips (first non-video track with clips) ─
+  // ── Derived: audio + music track clips ──────────────────────────────────
   const audioTracks = useMemo(() => tracks.filter((t) => t.type === 'audio' || t.type === 'music'), [tracks])
 
   const audioClips = useMemo(
@@ -51,41 +51,52 @@ export default function PreviewPanel(): JSX.Element {
     [timelineClips, audioTracks]
   )
 
+  // ── Derived: overlay (text) clips ────────────────────────────────────────
+  const overlayTrack = useMemo(() => tracks.find((t) => t.type === 'overlay'), [tracks])
+  const overlayClips = useMemo(
+    () =>
+      overlayTrack
+        ? timelineClips
+            .filter((c) => c.trackId === overlayTrack.id && c.type === 'text')
+            .sort((a, b) => a.startTime - b.startTime)
+        : [],
+    [timelineClips, overlayTrack]
+  )
+
   const totalDuration = useMemo(() => {
     const allClips = [...videoClips, ...audioClips]
     if (allClips.length === 0) return 0
     return allClips.reduce((max, c) => Math.max(max, c.startTime + c.duration), 0)
   }, [videoClips, audioClips])
 
-  // ── Refs (stable across renders, safe to use inside rAF closures) ────────
-  const videoRef          = useRef<HTMLVideoElement>(null)
-  const audioRef          = useRef<HTMLAudioElement>(null)
-  const isPlayingRef      = useRef(false)
-  const rafRef            = useRef<number | null>(null)
-  const currentSrcRef     = useRef('')
-  const currentAudioSrcRef = useRef('')
-  const videoClipsRef     = useRef(videoClips)
-  const audioClipsRef     = useRef(audioClips)
-  const mediaClipsRef     = useRef(mediaClips)
-  const tracksRef         = useRef(tracks)
-  const playheadRef       = useRef(playheadTime)
+  // ── Refs ─────────────────────────────────────────────────────────────────
+  const videoRef             = useRef<HTMLVideoElement>(null)
+  const audioRef             = useRef<HTMLAudioElement>(null)
+  const isPlayingRef         = useRef(false)
+  const rafRef               = useRef<number | null>(null)
+  const currentSrcRef        = useRef('')
+  const currentAudioSrcRef   = useRef('')
+  const videoClipsRef        = useRef(videoClips)
+  const audioClipsRef        = useRef(audioClips)
+  const mediaClipsRef        = useRef(mediaClips)
+  const tracksRef            = useRef(tracks)
+  const transitionsRef       = useRef(transitions)
+  const playheadRef          = useRef(playheadTime)
+  const fadeInRef            = useRef<{ startWall: number; duration: number } | null>(null)
 
-  // Keep refs in sync with latest renders
-  useEffect(() => { videoClipsRef.current  = videoClips  }, [videoClips])
-  useEffect(() => { audioClipsRef.current  = audioClips  }, [audioClips])
-  useEffect(() => { mediaClipsRef.current  = mediaClips  }, [mediaClips])
-  useEffect(() => { tracksRef.current      = tracks      }, [tracks])
-  useEffect(() => { playheadRef.current    = playheadTime }, [playheadTime])
-  useEffect(() => { isPlayingRef.current   = isPlaying   }, [isPlaying])
+  useEffect(() => { videoClipsRef.current      = videoClips   }, [videoClips])
+  useEffect(() => { audioClipsRef.current      = audioClips   }, [audioClips])
+  useEffect(() => { mediaClipsRef.current      = mediaClips   }, [mediaClips])
+  useEffect(() => { tracksRef.current          = tracks       }, [tracks])
+  useEffect(() => { transitionsRef.current     = transitions  }, [transitions])
+  useEffect(() => { playheadRef.current        = playheadTime }, [playheadTime])
+  useEffect(() => { isPlayingRef.current       = isPlaying    }, [isPlaying])
 
-  // ── Helpers (use refs so closures always see latest data) ────────────────
-
+  // ── Helpers ──────────────────────────────────────────────────────────────
   function findClipAt(time: number): TimelineClip | null {
-    return (
-      videoClipsRef.current.find(
-        (c) => time >= c.startTime && time < c.startTime + c.duration
-      ) ?? null
-    )
+    return videoClipsRef.current.find(
+      (c) => time >= c.startTime && time < c.startTime + c.duration
+    ) ?? null
   }
 
   function findNextClipAfter(time: number): TimelineClip | null {
@@ -107,18 +118,72 @@ export default function PreviewPanel(): JSX.Element {
     }
   }
 
-  // ── Playback engine ──────────────────────────────────────────────────────
+  // ── Opacity management for transitions ───────────────────────────────────
+  function computeVideoOpacity(tlClip: TimelineClip, playhead: number): number {
+    // Fade-in (incoming transition)
+    if (fadeInRef.current) {
+      const elapsed = (performance.now() - fadeInRef.current.startWall) / 1000
+      const progress = Math.min(1, elapsed / fadeInRef.current.duration)
+      if (progress >= 1) { fadeInRef.current = null; return 1 }
+      return progress
+    }
+    // Fade-out (outgoing transition)
+    const outT = transitionsRef.current.find((t) => t.fromClipId === tlClip.id)
+    if (outT) {
+      const clipEnd   = tlClip.startTime + tlClip.duration
+      const fadeStart = clipEnd - outT.duration
+      if (playhead >= fadeStart) {
+        return Math.max(0, 1 - (playhead - fadeStart) / outT.duration)
+      }
+    }
+    return 1
+  }
 
+  function applyClipEffects(clip: TimelineClip) {
+    const video = videoRef.current
+    if (!video) return
+
+    // Color grade via CSS filter
+    if (clip.colorSettings) {
+      const { brightness, contrast, saturation } = clip.colorSettings
+      video.style.filter = [
+        `brightness(${1 + brightness})`,
+        `contrast(${1 + contrast})`,
+        `saturate(${1 + saturation})`
+      ].join(' ')
+    } else {
+      video.style.filter = ''
+    }
+
+    // Crop / zoom via CSS transform
+    if (clip.cropSettings && clip.cropSettings.zoom > 1) {
+      const { zoom, panX, panY } = clip.cropSettings
+      const maxPan = ((zoom - 1) / (2 * zoom)) * 100
+      video.style.transform = `scale(${zoom}) translate(${panX * maxPan}%, ${panY * maxPan}%)`
+    } else {
+      video.style.transform = ''
+    }
+  }
+
+  function clearClipEffects() {
+    const video = videoRef.current
+    if (!video) return
+    video.style.filter    = ''
+    video.style.transform = ''
+    video.style.opacity   = '1'
+  }
+
+  // ── Playback engine ──────────────────────────────────────────────────────
   function stopPlayback() {
     isPlayingRef.current = false
     cancelRaf()
     videoRef.current?.pause()
     audioRef.current?.pause()
+    clearClipEffects()
     setIsPlaying(false)
   }
 
   // ── Audio track helpers ──────────────────────────────────────────────────
-
   function findAudioClipAt(time: number): TimelineClip | null {
     return audioClipsRef.current.find(
       (c) => time >= c.startTime && time < c.startTime + c.duration
@@ -135,8 +200,7 @@ export default function PreviewPanel(): JSX.Element {
     const media = mediaClipsRef.current.find((m) => m.id === tlClip.mediaClipId)
     if (!media?.path) return
 
-    const trackId = tlClip.trackId
-    audio.muted  = isEffectivelyMuted(trackId, tracksRef.current)
+    audio.muted  = isEffectivelyMuted(tlClip.trackId, tracksRef.current)
     audio.volume = tlClip.volume ?? 1
 
     const url    = pathToFileUrl(media.path)
@@ -163,16 +227,30 @@ export default function PreviewPanel(): JSX.Element {
     const video = videoRef.current
     if (!video) return
 
-    // Apply per-clip volume and track mute to the video element
+    // Speed for this clip
+    const speed = tlClip.speed ?? 1
+
+    // Check for incoming transition → start fade-in
+    const inT = transitionsRef.current.find((t) => t.toClipId === tlClip.id)
+    if (inT) {
+      fadeInRef.current = { startWall: performance.now(), duration: inT.duration }
+    } else {
+      fadeInRef.current = null
+      video.style.opacity = '1'
+    }
+
     if (media?.type === 'video') {
       video.volume = tlClip.volume ?? 1
       video.muted  = isEffectivelyMuted(tlClip.trackId, tracksRef.current)
+      video.playbackRate = speed
     }
 
     if (!media || media.type !== 'video' || !media.path) {
-      // Non-video clip (image / color): advance time via rAF then continue
+      // Non-video clip: advance time via rAF
+      applyClipEffects(tlClip)
       const clipEnd = tlClip.startTime + tlClip.duration
       advanceGap(fromPlayhead, clipEnd, () => {
+        clearClipEffects()
         const next = findNextClipAfter(clipEnd)
         if (next && next.id !== tlClip.id) {
           if (next.startTime > clipEnd + 0.01) {
@@ -188,14 +266,15 @@ export default function PreviewPanel(): JSX.Element {
     }
 
     const url        = pathToFileUrl(media.path)
-    const seekTo     = tlClip.trimStart + (fromPlayhead - tlClip.startTime)
-    const clipEndSrc = tlClip.trimStart + tlClip.duration
+    const seekTo     = tlClip.trimStart + (fromPlayhead - tlClip.startTime) * speed
+    const clipEndSrc = tlClip.trimStart + tlClip.duration * speed
 
     function doPlay() {
       if (!isPlayingRef.current) return
-      video.currentTime = seekTo
+      video.currentTime  = seekTo
+      video.playbackRate = speed
+      applyClipEffects(tlClip)
       video.play().catch((err) => {
-        // AbortError fires when play() is interrupted by a rapid src change — safe to ignore
         if (isPlayingRef.current && (err as DOMException).name !== 'AbortError') stopPlayback()
       })
       runRafLoop(tlClip, clipEndSrc)
@@ -214,14 +293,19 @@ export default function PreviewPanel(): JSX.Element {
 
   function runRafLoop(tlClip: TimelineClip, clipEndInSource: number) {
     cancelRaf()
+    const speed = tlClip.speed ?? 1
 
     function tick() {
       const video = videoRef.current
       if (!video || !isPlayingRef.current) return
 
-      // Sync playhead to video's actual clock
-      const newPlayhead = tlClip.startTime + (video.currentTime - tlClip.trimStart)
+      // Sync playhead to video's actual clock (adjusted for speed)
+      const newPlayhead = tlClip.startTime + (video.currentTime - tlClip.trimStart) / speed
       setPlayheadTime(newPlayhead)
+
+      // Apply transition opacity
+      const opacity = computeVideoOpacity(tlClip, newPlayhead)
+      video.style.opacity = String(opacity)
 
       // Detect clip end
       if (video.ended || video.currentTime >= clipEndInSource - 0.05) {
@@ -229,12 +313,11 @@ export default function PreviewPanel(): JSX.Element {
         const next    = findNextClipAfter(clipEnd)
 
         if (next && next.id !== tlClip.id) {
+          clearClipEffects()
           if (next.startTime > clipEnd + 0.01) {
-            // Gap between clips — pause video while we advance the clock
             video.pause()
             advanceGap(clipEnd, next.startTime, () => playClip(next, next.startTime))
           } else {
-            // Adjacent clip — don't pause, just switch src immediately
             playClip(next, next.startTime)
           }
         } else {
@@ -251,7 +334,6 @@ export default function PreviewPanel(): JSX.Element {
     rafRef.current = requestAnimationFrame(tick)
   }
 
-  /** Advance playhead through a gap (or non-video segment) in real time. */
   function advanceGap(from: number, to: number, onDone: () => void) {
     if (!isPlayingRef.current) return
     cancelRaf()
@@ -271,19 +353,16 @@ export default function PreviewPanel(): JSX.Element {
     rafRef.current = requestAnimationFrame(tick)
   }
 
-  // ── Seek (works whether playing or paused) ──────────────────────────────
+  // ── Seek ─────────────────────────────────────────────────────────────────
   function seekTo(time: number) {
     playheadRef.current = time
     setPlayheadTime(time)
 
     if (!isPlayingRef.current) return
 
-    // Cancel current loop and restart from new position
     cancelRaf()
     videoRef.current?.pause()
     audioRef.current?.pause()
-
-    // Restart audio from new position
     startAudioPlayback(time)
 
     const clip = findClipAt(time)
@@ -313,7 +392,6 @@ export default function PreviewPanel(): JSX.Element {
     isPlayingRef.current = true
     const time = playheadRef.current
 
-    // Video track
     const clip = findClipAt(time)
     if (clip) {
       playClip(clip, time)
@@ -331,14 +409,12 @@ export default function PreviewPanel(): JSX.Element {
       }
     }
 
-    // Audio track (fires and forgets — browser keeps it in sync with wall clock)
     startAudioPlayback(time)
 
     return () => { stopPlayback() }
   }, [isPlaying]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Scrub (when NOT playing) ─────────────────────────────────────────────
-  // Runs whenever playheadTime changes and we are paused
+  // ── Scrub (paused) ───────────────────────────────────────────────────────
   const activeTimelineClip = useMemo(() => findClipAt(playheadTime), [playheadTime, videoClips]) // eslint-disable-line react-hooks/exhaustive-deps
   const activeMediaClip    = useMemo(
     () => (activeTimelineClip ? mediaClips.find((m) => m.id === activeTimelineClip.mediaClipId) ?? null : null),
@@ -346,40 +422,52 @@ export default function PreviewPanel(): JSX.Element {
   )
 
   useEffect(() => {
-    if (isPlayingRef.current) return // rAF loop handles it
+    if (isPlayingRef.current) return
     const video = videoRef.current
     if (!video) return
 
     if (!activeMediaClip || !activeTimelineClip || activeMediaClip.type !== 'video' || !activeMediaClip.path) {
-      // No video at playhead — clear src so element shows nothing (black)
       if (currentSrcRef.current) {
         currentSrcRef.current = ''
         video.removeAttribute('src')
         video.load()
       }
+      // Apply effects even for non-video clips during scrub
+      if (activeTimelineClip) applyClipEffects(activeTimelineClip)
+      else clearClipEffects()
       return
     }
 
     const url    = pathToFileUrl(activeMediaClip.path)
-    const seekTo = activeTimelineClip.trimStart + (playheadTime - activeTimelineClip.startTime)
+    const offset = activeTimelineClip.trimStart + (playheadTime - activeTimelineClip.startTime) * (activeTimelineClip.speed ?? 1)
+
+    applyClipEffects(activeTimelineClip)
 
     if (currentSrcRef.current !== url) {
       currentSrcRef.current = url
       video.src = url
       video.load()
       video.addEventListener('loadedmetadata', () => {
-        if (!isPlayingRef.current) video.currentTime = seekTo
+        if (!isPlayingRef.current) video.currentTime = offset
       }, { once: true })
     } else {
-      video.currentTime = seekTo
+      video.currentTime = offset
     }
   }, [playheadTime, activeMediaClip?.id, activeTimelineClip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Active text clips at playhead
+  const activeTextClips = useMemo(
+    () => overlayClips.filter(
+      (c) => playheadTime >= c.startTime && playheadTime < c.startTime + c.duration
+    ),
+    [overlayClips, playheadTime]
+  )
+
   // ── Display helpers ──────────────────────────────────────────────────────
-  const isEmpty    = videoClips.length === 0
-  const showColor  = activeTimelineClip?.type === 'color'
-  const showImage  = !showColor && activeMediaClip?.type === 'image'
-  const showVideo  = !showColor && !showImage && !isEmpty
+  const isEmpty   = videoClips.length === 0
+  const showColor = activeTimelineClip?.type === 'color'
+  const showImage = !showColor && activeMediaClip?.type === 'image'
+  const showVideo = !showColor && !showImage && !isEmpty
 
   const colorBg  = showColor ? (activeTimelineClip!.color ?? '#000') : null
   const imageSrc = showImage && activeMediaClip?.path ? pathToFileUrl(activeMediaClip.path) : null
@@ -408,14 +496,23 @@ export default function PreviewPanel(): JSX.Element {
           className={cn('max-w-full max-h-full', showVideo ? 'block' : 'hidden')}
           playsInline
           crossOrigin="anonymous"
+          style={{ transition: 'none' }}
         />
 
-        {/* Hidden audio element for audio/music track clips */}
+        {/* Hidden audio element */}
         <audio ref={audioRef} className="hidden" crossOrigin="anonymous" />
 
         {/* Color clip */}
         {showColor && (
-          <div className="absolute inset-0" style={{ backgroundColor: colorBg ?? '#000' }} />
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundColor: colorBg ?? '#000',
+              filter: activeTimelineClip?.colorSettings
+                ? buildCssFilter(activeTimelineClip.colorSettings)
+                : undefined
+            }}
+          />
         )}
 
         {/* Image clip */}
@@ -425,6 +522,14 @@ export default function PreviewPanel(): JSX.Element {
             alt=""
             className="max-w-full max-h-full object-contain"
             crossOrigin="anonymous"
+            style={{
+              filter: activeTimelineClip?.colorSettings
+                ? buildCssFilter(activeTimelineClip.colorSettings)
+                : undefined,
+              ...(activeTimelineClip?.cropSettings && activeTimelineClip.cropSettings.zoom > 1
+                ? buildCssTransform(activeTimelineClip.cropSettings)
+                : {})
+            }}
           />
         )}
 
@@ -438,14 +543,20 @@ export default function PreviewPanel(): JSX.Element {
           </div>
         )}
 
+        {/* ── Text overlays ──────────────────────────────────────────────── */}
+        {activeTextClips.map((clip) => (
+          clip.textSettings && (
+            <TextOverlay key={clip.id} settings={clip.textSettings} />
+          )
+        ))}
+
         {/* ── Controls overlay ─────────────────────────────────────────── */}
         <div className="absolute inset-x-0 bottom-0 flex flex-col">
-          {/* Progress / scrub bar — YouTube-style: grows on hover, dot appears */}
+          {/* Progress / scrub bar */}
           <div
             className="px-3 pb-1 pt-2 cursor-pointer group/bar"
             onClick={(e) => {
               if (totalDuration <= 0) return
-              // measure the inner track, not the padding wrapper
               const track = e.currentTarget.querySelector<HTMLDivElement>('[data-track]')
               if (!track) return
               const rect = track.getBoundingClientRect()
@@ -461,7 +572,6 @@ export default function PreviewPanel(): JSX.Element {
                 className="h-full bg-[var(--accent)] rounded-full"
                 style={{ width: `${progressFraction * 100}%` }}
               />
-              {/* Scrub dot */}
               <div
                 className="absolute top-1/2 w-3 h-3 rounded-full bg-white shadow opacity-0 group-hover/bar:opacity-100 transition-opacity duration-150 pointer-events-none -translate-x-1/2 -translate-y-1/2"
                 style={{ left: `${progressFraction * 100}%` }}
@@ -471,12 +581,10 @@ export default function PreviewPanel(): JSX.Element {
 
           {/* Transport row */}
           <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-t from-black/80 to-transparent">
-            {/* Timecode */}
             <span className="text-[11px] font-mono text-[var(--text-secondary)] w-[72px]">
               {formatTimecode(playheadTime)}
             </span>
 
-            {/* Transport buttons */}
             <div className="flex-1 flex items-center justify-center gap-1">
               <TransportBtn
                 label="Step back  ←"
@@ -486,7 +594,7 @@ export default function PreviewPanel(): JSX.Element {
               </TransportBtn>
 
               <motion.button
-                tabIndex={-1}  // Space bar is handled by the global keyboard handler
+                tabIndex={-1}
                 whileTap={{ scale: 0.9 }}
                 transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                 onClick={() => setIsPlaying(!isPlaying)}
@@ -526,7 +634,6 @@ export default function PreviewPanel(): JSX.Element {
               </TransportBtn>
             </div>
 
-            {/* Right controls */}
             <div className="w-[72px] flex items-center justify-end gap-2">
               <Tooltip content="Volume (coming soon)">
                 <button className="text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors">
@@ -549,7 +656,58 @@ export default function PreviewPanel(): JSX.Element {
   )
 }
 
-// ── Sub-components ─────────────────────────────────────────────────────────
+// ── Text overlay renderer ──────────────────────────────────────────────────────
+
+function TextOverlay({ settings }: { settings: TextSettings }): JSX.Element {
+  const {
+    content, fontSize, fontColor, bgColor,
+    bold, italic, alignment, positionX, positionY
+  } = settings
+
+  const style: CSSProperties = {
+    position:  'absolute',
+    left:      `${positionX * 100}%`,
+    top:       `${positionY * 100}%`,
+    transform: alignment === 'left'
+      ? 'translate(0, -50%)'
+      : alignment === 'right'
+        ? 'translate(-100%, -50%)'
+        : 'translate(-50%, -50%)',
+    fontSize:   `${fontSize * 0.056}vw`,   // scale relative to preview width
+    color:      fontColor,
+    fontWeight: bold   ? 'bold'   : 'normal',
+    fontStyle:  italic ? 'italic' : 'normal',
+    textAlign:  alignment,
+    whiteSpace: 'pre-wrap',
+    pointerEvents: 'none',
+    userSelect: 'none',
+    textShadow: '0 1px 4px rgba(0,0,0,0.8)',
+    padding:    bgColor !== 'transparent' ? '4px 10px' : undefined,
+    backgroundColor: bgColor !== 'transparent' ? bgColor : undefined,
+    borderRadius:    bgColor !== 'transparent' ? '4px' : undefined,
+    lineHeight: 1.2
+  }
+
+  return <div style={style}>{content}</div>
+}
+
+// ── CSS helpers ────────────────────────────────────────────────────────────────
+
+function buildCssFilter(cs: { brightness: number; contrast: number; saturation: number }): string {
+  return [
+    `brightness(${1 + cs.brightness})`,
+    `contrast(${1 + cs.contrast})`,
+    `saturate(${1 + cs.saturation})`
+  ].join(' ')
+}
+
+function buildCssTransform(crop: { zoom: number; panX: number; panY: number }): CSSProperties {
+  const { zoom, panX, panY } = crop
+  const maxPan = ((zoom - 1) / (2 * zoom)) * 100
+  return { transform: `scale(${zoom}) translate(${panX * maxPan}%, ${panY * maxPan}%)` }
+}
+
+// ── Sub-components ─────────────────────────────────────────────────────────────
 
 function TransportBtn({
   children,

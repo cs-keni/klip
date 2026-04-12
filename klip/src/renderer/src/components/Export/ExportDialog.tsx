@@ -127,7 +127,6 @@ export default function ExportDialog({ onClose }: ExportDialogProps): JSX.Elemen
   const handleExport = useCallback(async () => {
     if (!outputPath || videoClips.length === 0) return
 
-    // Build the export job from the current store state
     const mediaPaths:  Record<string, string> = {}
     const mediaTypes:  Record<string, string> = {}
     const mediaColors: Record<string, string> = {}
@@ -138,7 +137,10 @@ export default function ExportDialog({ onClose }: ExportDialogProps): JSX.Elemen
       if (mc.color) mediaColors[mc.id] = mc.color
     }
 
-    const audioTracks = tracks.filter((t) => t.type === 'audio' || t.type === 'music')
+    const audioTracks  = tracks.filter((t) => t.type === 'audio' || t.type === 'music')
+    const overlayTrack = tracks.find((t) => t.type === 'overlay')
+
+    const { transitions } = useTimelineStore.getState()
 
     const job = {
       outputPath,
@@ -150,22 +152,34 @@ export default function ExportDialog({ onClose }: ExportDialogProps): JSX.Elemen
       audioBitrate: preset.audioBitrate,
       sampleRate: 48000,
       totalDuration,
-      videoTrackId: videoTrack?.id ?? '',
+      videoTrackId:  videoTrack?.id ?? '',
       audioTrackIds: audioTracks.map((t) => t.id),
+      overlayTrackId: overlayTrack?.id ?? '',
       clips: timelineClips.map((c) => ({
-        id: c.id,
+        id:          c.id,
         mediaClipId: c.mediaClipId,
-        trackId: c.trackId,
-        startTime: c.startTime,
-        trimStart: c.trimStart,
-        duration: c.duration,
-        volume: c.volume ?? 1
+        trackId:     c.trackId,
+        clipType:    c.type,
+        startTime:   c.startTime,
+        trimStart:   c.trimStart,
+        duration:    c.duration,
+        volume:      c.volume ?? 1,
+        speed:       c.speed,
+        textSettings:  c.textSettings,
+        colorSettings: c.colorSettings,
+        cropSettings:  c.cropSettings
+      })),
+      transitions: transitions.map((t) => ({
+        fromClipId: t.fromClipId,
+        toClipId:   t.toClipId,
+        type:       t.type,
+        duration:   t.duration
       })),
       mediaPaths,
       mediaTypes,
       mediaColors,
-      trackMutes:  Object.fromEntries(tracks.map((t) => [t.id, t.isMuted])),
-      trackSolos:  tracks.filter((t) => t.isSolo).map((t) => t.id)
+      trackMutes: Object.fromEntries(tracks.map((t) => [t.id, t.isMuted])),
+      trackSolos: tracks.filter((t) => t.isSolo).map((t) => t.id)
     }
 
     setDialogState('exporting')

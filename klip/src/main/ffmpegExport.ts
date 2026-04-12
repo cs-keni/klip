@@ -4,6 +4,30 @@ import { join } from 'path'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
+export interface TextSettingsExport {
+  content: string
+  fontSize: number
+  fontColor: string
+  bgColor: string
+  bold: boolean
+  italic: boolean
+  alignment: 'left' | 'center' | 'right'
+  positionX: number
+  positionY: number
+}
+
+export interface ColorSettingsExport {
+  brightness: number  // -1 to 1
+  contrast: number    // -1 to 1
+  saturation: number  // -1 to 1
+}
+
+export interface CropSettingsExport {
+  zoom: number    // 1.0 = no zoom
+  panX: number    // -1 to 1
+  panY: number    // -1 to 1
+}
+
 export interface ExportJob {
   outputPath: string
   // Video settings
@@ -11,36 +35,52 @@ export interface ExportJob {
   height: number
   fps: number
   crf: number
-  x264Preset: string   // 'fast' | 'medium' | 'slow'
+  x264Preset: string
   // Audio settings
-  audioBitrate: string // e.g. '320k'
-  sampleRate: number   // e.g. 48000
+  audioBitrate: string
+  sampleRate: number
   // Timeline
   totalDuration: number
   videoTrackId: string
   audioTrackIds: string[]
+  overlayTrackId: string
   clips: ExportClip[]
+  // Transitions
+  transitions: ExportTransition[]
   // Resolved from media store
-  mediaPaths:  Record<string, string>  // mediaClipId → file path
-  mediaTypes:  Record<string, string>  // mediaClipId → 'video'|'audio'|'image'|'color'
-  mediaColors: Record<string, string>  // mediaClipId → hex color (color clips)
+  mediaPaths:  Record<string, string>
+  mediaTypes:  Record<string, string>
+  mediaColors: Record<string, string>
   // Track state
-  trackMutes: Record<string, boolean>  // trackId → isMuted
-  trackSolos: string[]                 // trackIds with isSolo=true
+  trackMutes: Record<string, boolean>
+  trackSolos: string[]
 }
 
 export interface ExportClip {
   id: string
   mediaClipId: string
   trackId: string
+  /** Explicit clip type (avoids mediaTypes lookup for synthetic clips). */
+  clipType: 'video' | 'audio' | 'image' | 'color' | 'text'
   startTime: number
   trimStart: number
   duration: number
   volume: number
+  speed?: number
+  textSettings?: TextSettingsExport
+  colorSettings?: ColorSettingsExport
+  cropSettings?: CropSettingsExport
+}
+
+export interface ExportTransition {
+  fromClipId: string
+  toClipId: string
+  type: 'fade' | 'dip-to-black'
+  duration: number
 }
 
 export interface ExportProgress {
-  progress: number  // 0–1
+  progress: number
   fps: number
   speed: string
   etaSecs: number
@@ -49,7 +89,6 @@ export interface ExportProgress {
 // ── FFmpeg binary resolution ───────────────────────────────────────────────────
 
 export function getFFmpegPath(): string {
-  // Packaged app: look in Electron's resources directory
   if (process.env.NODE_ENV !== 'development') {
     const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath ?? ''
     for (const name of ['ffmpeg.exe', 'ffmpeg']) {
@@ -58,7 +97,6 @@ export function getFFmpegPath(): string {
     }
   }
 
-  // Dev: try ffmpeg-static (requires `npm install` to have run on Windows)
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const ffmpegStatic = require('ffmpeg-static') as string | null
@@ -67,7 +105,6 @@ export function getFFmpegPath(): string {
     // ignore
   }
 
-  // Last resort: expect ffmpeg on the system PATH
   return process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
 }
 
@@ -79,25 +116,70 @@ function isTrackMuted(trackId: string, job: ExportJob): boolean {
   return false
 }
 
-// ── Filter-complex builder ────────────────────────────────────────────────────
+// ── drawtext escaping ─────────────────────────────────────────────────────────
+
+function escapeDrawtext(s: string): string {
+  return s
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g,  "\\'")
+    .replace(/:/g,  '\\:')
+    .replace(/\n/g, '\\n')
+}
+
+// ── Color grade filter ────────────────────────────────────────────────────────
+
+function colorGradeFilter(cs: ColorSettingsExport): string {
+  // FFmpeg eq filter: brightness -1..1, contrast 1 = no change, saturation 0..3
+  const contrast   = 1 + cs.contrast          // map -1..1 → 0..2
+  const saturation = Math.max(0, Math.min(3, 1 + cs.saturation))
+  return `eq=brightness=${cs.brightness.toFixed(3)}:contrast=${contrast.toFixed(3)}:saturation=${saturation.toFixed(3)}`
+}
+
+// ── Crop/zoom filter ──────────────────────────────────────────────────────────
+
+function cropZoomFilter(crop: CropSettingsExport): string {
+  if (crop.zoom <= 1.001) return ''
+  const z  = crop.zoom
+  const px = crop.panX
+  const py = crop.panY
+  // crop=iw/Z:ih/Z:iw/2*(1-1/Z)*(1+PX):ih/2*(1-1/Z)*(1+PY)
+  const cropW = `iw/${z.toFixed(4)}`
+  const cropH = `ih/${z.toFixed(4)}`
+  const cropX = `iw/2*(1-1/${z.toFixed(4)})*(1+${px.toFixed(4)})`
+  const cropY = `ih/2*(1-1/${z.toFixed(4)})*(1+${py.toFixed(4)})`
+  // After crop, scale back to original (the main scaleFilter handles final output size)
+  return `crop=${cropW}:${cropH}:${cropX}:${cropY}`
+}
+
+// ── Speed filter chains ───────────────────────────────────────────────────────
 
 /**
- * Builds the complete FFmpeg argument list for a given export job.
- *
- * Strategy:
- *   1. Build a linear sequence of video + audio segments from the video track,
- *      inserting black-video / silence for any timeline gaps.
- *   2. Concat all video segments → [vout]
- *   3. Concat all audio segments → [video_audio]
- *   4. For each audio-track clip, create a silence-padded stream positioned at
- *      its timeline offset → mix with video_audio via amix → [aout]
- *   5. Encode with H.264 + AAC and output to job.outputPath.
+ * atempo only accepts values in [0.5, 2.0].
+ * For speeds outside that range, chain multiple atempo filters.
  */
+function buildAtempoChain(speed: number): string {
+  const filters: string[] = []
+  let remaining = speed
+
+  while (remaining > 2.0) {
+    filters.push('atempo=2.0')
+    remaining /= 2.0
+  }
+  while (remaining < 0.5) {
+    filters.push('atempo=0.5')
+    remaining /= 0.5
+  }
+  filters.push(`atempo=${remaining.toFixed(6)}`)
+  return filters.join(',')
+}
+
+// ── Filter-complex builder ────────────────────────────────────────────────────
+
 export function buildFFmpegArgs(job: ExportJob): string[] {
   const { width, height, fps, crf, x264Preset, audioBitrate, sampleRate, totalDuration } = job
   const chLayout = 'stereo'
 
-  // ── Separate clips by track ─────────────────────────────────────────────────
+  // ── Separate clips by track ───────────────────────────────────────────────
   const videoClips = job.clips
     .filter((c) => c.trackId === job.videoTrackId)
     .sort((a, b) => a.startTime - b.startTime)
@@ -108,17 +190,17 @@ export function buildFFmpegArgs(job: ExportJob): string[] {
         .sort((a, b) => a.startTime - b.startTime)
     : []
 
+  const textClips = job.clips
+    .filter((c) => c.trackId === job.overlayTrackId && c.clipType === 'text' && c.textSettings)
+    .sort((a, b) => a.startTime - b.startTime)
+
   const videoMuted = isTrackMuted(job.videoTrackId, job)
 
   if (videoClips.length === 0) {
     throw new Error('No video clips on the video track. Add video clips before exporting.')
   }
 
-  // ── Input management ────────────────────────────────────────────────────────
-  //
-  // Image clips require -loop 1 -t D before -i, so they get dedicated entries.
-  // Video/audio files are deduplicated (same file = same -i index).
-
+  // ── Input management ──────────────────────────────────────────────────────
   interface InputEntry { preArgs: string[]; path: string }
   const inputs: InputEntry[] = []
 
@@ -134,20 +216,17 @@ export function buildFFmpegArgs(job: ExportJob): string[] {
     return inputs.length - 1
   }
 
-  // Pre-register inputs in the order they appear (video first, then audio track)
   for (const clip of videoClips) {
     const path = job.mediaPaths[clip.mediaClipId]
-    const type = job.mediaTypes[clip.mediaClipId]
+    const type = clip.clipType
     if (path && type === 'video') getVideoAudioInput(path)
-    // images registered on-the-fly below (need per-clip duration)
   }
   for (const clip of audioClips) {
     const path = job.mediaPaths[clip.mediaClipId]
     if (path) getVideoAudioInput(path)
   }
 
-  // ── Build filter_complex ────────────────────────────────────────────────────
-
+  // ── Build filter_complex ──────────────────────────────────────────────────
   const filterParts: string[] = []
   const videoSegLabels: string[] = []
   const audioSegLabels: string[] = []
@@ -169,27 +248,81 @@ export function buildFFmpegArgs(job: ExportJob): string[] {
   }
 
   for (const clip of videoClips) {
-    // Gap before this clip
     const gap = clip.startTime - currentTime
     if (gap > 0.001) pushGap(gap)
 
     const vl = `sv${segIdx}`, al = `sa${segIdx}`
-    const type  = job.mediaTypes[clip.mediaClipId]
+    const type  = clip.clipType
     const path  = job.mediaPaths[clip.mediaClipId]
     const color = job.mediaColors[clip.mediaClipId]
     const vol   = clip.volume ?? 1
-    const trimEnd = clip.trimStart + clip.duration
+    const speed = clip.speed ?? 1
+
+    // Source duration consumed (accounting for speed)
+    const sourceDuration = clip.duration * speed
+    const trimEnd = clip.trimStart + sourceDuration
+
+    // Transition fade filters for this segment
+    const fromTransition = job.transitions.find((t) => t.fromClipId === clip.id)
+    const toTransition   = job.transitions.find((t) => t.toClipId === clip.id)
+
+    // Output duration of this segment = clip.duration
+    const outDuration = clip.duration
+
+    function videoFadeFilters(): string {
+      const parts: string[] = []
+      if (toTransition) {
+        parts.push(`fade=t=in:st=0:d=${toTransition.duration.toFixed(3)}`)
+      }
+      if (fromTransition) {
+        const fadeStart = Math.max(0, outDuration - fromTransition.duration)
+        parts.push(`fade=t=out:st=${fadeStart.toFixed(3)}:d=${fromTransition.duration.toFixed(3)}`)
+      }
+      return parts.length ? ',' + parts.join(',') : ''
+    }
+
+    function audioFadeFilters(): string {
+      const parts: string[] = []
+      if (toTransition) {
+        parts.push(`afade=t=in:st=0:d=${toTransition.duration.toFixed(3)}`)
+      }
+      if (fromTransition) {
+        const fadeStart = Math.max(0, outDuration - fromTransition.duration)
+        parts.push(`afade=t=out:st=${fadeStart.toFixed(3)}:d=${fromTransition.duration.toFixed(3)}`)
+      }
+      return parts.length ? ',' + parts.join(',') : ''
+    }
+
+    // Extra video filters (color grade, crop)
+    function extraVideoFilters(): string {
+      const parts: string[] = []
+      if (clip.cropSettings && clip.cropSettings.zoom > 1.001) {
+        const cf = cropZoomFilter(clip.cropSettings)
+        if (cf) parts.push(cf)
+      }
+      if (clip.colorSettings) {
+        parts.push(colorGradeFilter(clip.colorSettings))
+      }
+      return parts.length ? ',' + parts.join(',') : ''
+    }
 
     if (type === 'video' && path) {
       const ii = getVideoAudioInput(path)
+      const speedV = speed !== 1 ? `,setpts=(PTS-STARTPTS)*(1/${speed.toFixed(6)})` : ',setpts=PTS-STARTPTS'
+      const speedA = speed !== 1 ? `,${buildAtempoChain(speed)}` : ''
+
       filterParts.push(
-        `[${ii}:v]trim=start=${clip.trimStart.toFixed(6)}:end=${trimEnd.toFixed(6)},` +
-        `setpts=PTS-STARTPTS,${scaleFilter},fps=fps=${fps}[${vl}]`
+        `[${ii}:v]trim=start=${clip.trimStart.toFixed(6)}:end=${trimEnd.toFixed(6)}` +
+        `${speedV}` +
+        `${extraVideoFilters()}` +
+        `,${scaleFilter},fps=fps=${fps}` +
+        `${videoFadeFilters()}[${vl}]`
       )
       if (!videoMuted) {
         filterParts.push(
           `[${ii}:a]atrim=start=${clip.trimStart.toFixed(6)}:end=${trimEnd.toFixed(6)},` +
-          `asetpts=PTS-STARTPTS,volume=${vol}[${al}]`
+          `asetpts=PTS-STARTPTS${speedA},volume=${vol}` +
+          `${audioFadeFilters()}[${al}]`
         )
       } else {
         filterParts.push(
@@ -197,23 +330,26 @@ export function buildFFmpegArgs(job: ExportJob): string[] {
         )
       }
     } else if (type === 'image' && path) {
-      const ii = addImageInput(path, clip.duration)
+      const ii     = addImageInput(path, clip.duration)
+      const extraV = extraVideoFilters()
       filterParts.push(
-        `[${ii}:v]setpts=PTS-STARTPTS,${scaleFilter},fps=fps=${fps}[${vl}]`
+        `[${ii}:v]setpts=PTS-STARTPTS${extraV},${scaleFilter},fps=fps=${fps}${videoFadeFilters()}[${vl}]`
       )
+      // Image clips have no audio
       filterParts.push(
         `aevalsrc=0|0:channel_layout=${chLayout}:sample_rate=${sampleRate}:d=${clip.duration.toFixed(6)}[${al}]`
       )
     } else if (type === 'color') {
       const hexColor = (color ?? '#000000').replace('#', '0x')
+      // Color clips: apply color grade if present (via eq filter on the generated stream)
+      const gradeFilter = clip.colorSettings ? `,${colorGradeFilter(clip.colorSettings)}` : ''
       filterParts.push(
-        `color=${hexColor}:s=${width}x${height}:r=${fps}:d=${clip.duration.toFixed(6)}[${vl}]`
+        `color=${hexColor}:s=${width}x${height}:r=${fps}:d=${clip.duration.toFixed(6)}${gradeFilter}${videoFadeFilters()}[${vl}]`
       )
       filterParts.push(
         `aevalsrc=0|0:channel_layout=${chLayout}:sample_rate=${sampleRate}:d=${clip.duration.toFixed(6)}[${al}]`
       )
     } else {
-      // Unknown / missing path → treat as gap
       pushGap(clip.duration)
       currentTime = clip.startTime + clip.duration
       continue
@@ -225,19 +361,64 @@ export function buildFFmpegArgs(job: ExportJob): string[] {
     currentTime = clip.startTime + clip.duration
   }
 
-  // Trailing gap to reach totalDuration
   const trailing = totalDuration - currentTime
   if (trailing > 0.001) pushGap(trailing)
 
-  // Concat all video + audio segments
-  const concatN  = videoSegLabels.length
-  const vConcat  = videoSegLabels.map((l) => `[${l}]`).join('')
-  const aConcat  = audioSegLabels.map((l) => `[${l}]`).join('')
-  filterParts.push(`${vConcat}concat=n=${concatN}:v=1:a=0[vout]`)
+  const concatN = videoSegLabels.length
+  const vConcat = videoSegLabels.map((l) => `[${l}]`).join('')
+  const aConcat = audioSegLabels.map((l) => `[${l}]`).join('')
+  filterParts.push(`${vConcat}concat=n=${concatN}:v=1:a=0[vconcat]`)
   filterParts.push(`${aConcat}concat=n=${concatN}:v=0:a=1[video_audio]`)
 
-  // ── Audio-track clips: position each with silence prefix, then mix ──────────
+  // ── Text overlay drawtext filters ──────────────────────────────────────────
+  let videoOut = 'vconcat'
 
+  for (let i = 0; i < textClips.length; i++) {
+    const clip = textClips[i]
+    const ts   = clip.textSettings!
+    const outLabel = i === textClips.length - 1 ? 'vout' : `vtxt${i}`
+
+    const scaledSize = Math.round(ts.fontSize * height / 1080)
+    const hexColor   = ts.fontColor.replace('#', '')
+    const enableExpr = `between(t,${clip.startTime.toFixed(3)},${(clip.startTime + clip.duration).toFixed(3)})`
+
+    // X position based on alignment
+    let xExpr: string
+    if (ts.alignment === 'center') {
+      xExpr = `(w-text_w)/2+${(ts.positionX - 0.5).toFixed(4)}*w`
+    } else if (ts.alignment === 'right') {
+      xExpr = `${ts.positionX.toFixed(4)}*w-text_w`
+    } else {
+      xExpr = `${ts.positionX.toFixed(4)}*w`
+    }
+    const yExpr = `${ts.positionY.toFixed(4)}*h-text_h/2`
+
+    const boxArgs = ts.bgColor !== 'transparent'
+      ? `:box=1:boxcolor=${ts.bgColor.replace('#', '')}@0.8:boxborderw=8`
+      : ''
+
+    const boldArg   = ts.bold   ? ':bold=1'   : ''
+    const italicArg = ts.italic ? ':italic=1' : ''
+
+    const drawtextFilter =
+      `drawtext=text='${escapeDrawtext(ts.content)}'` +
+      `:fontsize=${scaledSize}` +
+      `:fontcolor=${hexColor}` +
+      `${boldArg}${italicArg}` +
+      `:x=${xExpr}:y=${yExpr}` +
+      `:enable='${enableExpr}'` +
+      `${boxArgs}`
+
+    filterParts.push(`[${videoOut}]${drawtextFilter}[${outLabel}]`)
+    videoOut = outLabel
+  }
+
+  // If no text clips, pass vconcat through as vout
+  if (textClips.length === 0) {
+    filterParts.push(`[vconcat]copy[vout]`)
+  }
+
+  // ── Audio-track clips: silence-pad + amix ────────────────────────────────
   const audioMixSources: string[] = ['[video_audio]']
 
   for (let i = 0; i < audioClips.length; i++) {
@@ -247,7 +428,9 @@ export function buildFFmpegArgs(job: ExportJob): string[] {
 
     const ii      = getVideoAudioInput(path)
     const vol     = clip.volume ?? 1
-    const trimEnd = clip.trimStart + clip.duration
+    const speed   = clip.speed  ?? 1
+    const trimEnd = clip.trimStart + clip.duration * speed
+    const speedA  = speed !== 1 ? `,${buildAtempoChain(speed)}` : ''
     const prefLbl = `apre${i}`
     const clipLbl = `aclip${i}`
     const padLbl  = `apad${i}`
@@ -258,20 +441,19 @@ export function buildFFmpegArgs(job: ExportJob): string[] {
       )
       filterParts.push(
         `[${ii}:a]atrim=start=${clip.trimStart.toFixed(6)}:end=${trimEnd.toFixed(6)},` +
-        `asetpts=PTS-STARTPTS,volume=${vol}[${clipLbl}]`
+        `asetpts=PTS-STARTPTS${speedA},volume=${vol}[${clipLbl}]`
       )
       filterParts.push(`[${prefLbl}][${clipLbl}]concat=n=2:v=0:a=1[${padLbl}]`)
     } else {
       filterParts.push(
         `[${ii}:a]atrim=start=${clip.trimStart.toFixed(6)}:end=${trimEnd.toFixed(6)},` +
-        `asetpts=PTS-STARTPTS,volume=${vol}[${padLbl}]`
+        `asetpts=PTS-STARTPTS${speedA},volume=${vol}[${padLbl}]`
       )
     }
 
     audioMixSources.push(`[${padLbl}]`)
   }
 
-  // Final audio: pass-through or amix
   if (audioMixSources.length === 1) {
     filterParts.push(`[video_audio]aformat=channel_layouts=${chLayout}[aout]`)
   } else {
@@ -281,8 +463,7 @@ export function buildFFmpegArgs(job: ExportJob): string[] {
     )
   }
 
-  // ── Assemble final args ─────────────────────────────────────────────────────
-
+  // ── Assemble final args ───────────────────────────────────────────────────
   const inputArgs: string[] = []
   for (const inp of inputs) {
     inputArgs.push(...inp.preArgs, '-i', inp.path)
@@ -338,12 +519,10 @@ export function runExport(
 
   let stderr = ''
 
-  // Progress lives on stderr (FFmpeg's default progress output)
   proc.stderr.on('data', (chunk: Buffer) => {
     const text = chunk.toString()
     stderr += text
 
-    // Parse: time=HH:MM:SS.CC  speed=Nx
     const timeMatch  = text.match(/time=(\d+):(\d+):(\d+\.\d+)/)
     const speedMatch = text.match(/speed=\s*([\d.]+)x/)
     const fpsMatch   = text.match(/fps=\s*(\d+)/)
@@ -364,7 +543,6 @@ export function runExport(
     if (code === 0) {
       onDone(job.outputPath)
     } else {
-      // Extract the last meaningful line from stderr for the error message
       const lines = stderr.split('\n').filter(Boolean)
       const msg = lines.slice(-5).join('\n') || `FFmpeg exited with code ${code}`
       onError(msg)
