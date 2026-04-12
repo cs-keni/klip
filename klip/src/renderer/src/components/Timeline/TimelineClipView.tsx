@@ -206,8 +206,6 @@ export default function TimelineClipView({
       <div
         className="absolute inset-0 rounded overflow-hidden cursor-grab active:cursor-grabbing"
         style={{
-          left:  EDGE_HIT,
-          right: EDGE_HIT,
           background:  bg,
           borderWidth: 1,
           borderStyle: 'solid',

@@ -198,6 +198,34 @@ export default function PreviewPanel(): JSX.Element {
     rafRef.current = requestAnimationFrame(tick)
   }
 
+  // ── Seek (works whether playing or paused) ──────────────────────────────
+  function seekTo(time: number) {
+    playheadRef.current = time
+    setPlayheadTime(time)
+
+    if (!isPlayingRef.current) return
+
+    // Cancel current loop and restart from new position
+    cancelRaf()
+    videoRef.current?.pause()
+
+    const clip = findClipAt(time)
+    if (clip) {
+      playClip(clip, time)
+    } else {
+      const next = findNextClipAfter(time)
+      if (next) {
+        if (next.startTime > time + 0.01) {
+          advanceGap(time, next.startTime, () => playClip(next, next.startTime))
+        } else {
+          playClip(next, next.startTime)
+        }
+      } else {
+        stopPlayback()
+      }
+    }
+  }
+
   // Start / stop playback when isPlaying changes
   useEffect(() => {
     if (!isPlaying) {
@@ -337,7 +365,7 @@ export default function PreviewPanel(): JSX.Element {
               if (!track) return
               const rect = track.getBoundingClientRect()
               const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-              setPlayheadTime(fraction * totalDuration)
+              seekTo(fraction * totalDuration)
             }}
           >
             <div
@@ -367,7 +395,7 @@ export default function PreviewPanel(): JSX.Element {
             <div className="flex-1 flex items-center justify-center gap-1">
               <TransportBtn
                 label="Step back  ←"
-                onClick={() => setPlayheadTime(Math.max(0, playheadTime - 1 / 30))}
+                onClick={() => seekTo(Math.max(0, playheadTime - 1 / 30))}
               >
                 <StepBackIcon />
               </TransportBtn>
@@ -407,7 +435,7 @@ export default function PreviewPanel(): JSX.Element {
 
               <TransportBtn
                 label="Step forward  →"
-                onClick={() => setPlayheadTime(playheadTime + 1 / 30)}
+                onClick={() => seekTo(playheadTime + 1 / 30)}
               >
                 <StepForwardIcon />
               </TransportBtn>
