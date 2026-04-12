@@ -584,41 +584,17 @@ function ClipContextMenu({
               display={`${cropS.zoom.toFixed(2)}×`}
               onChange={(v) => onCropChange({ ...cropS, zoom: v / 100 })}
             />
-            {/* Position presets — only useful when zoomed in */}
             {cropS.zoom > 1 && (
-              <div className="space-y-1">
-                <span className="text-[9px] text-[var(--text-muted)] uppercase tracking-wide">Position</span>
-                <div className="grid grid-cols-3 gap-0.5">
-                  {([
-                    { label: '↖', panX: -1, panY: -1 },
-                    { label: '↑',  panX:  0, panY: -1 },
-                    { label: '↗', panX:  1, panY: -1 },
-                    { label: '←', panX: -1, panY:  0 },
-                    { label: '·',  panX:  0, panY:  0 },
-                    { label: '→', panX:  1, panY:  0 },
-                    { label: '↙', panX: -1, panY:  1 },
-                    { label: '↓',  panX:  0, panY:  1 },
-                    { label: '↘', panX:  1, panY:  1 },
-                  ] as const).map(({ label, panX, panY }) => {
-                    const active = Math.abs(cropS.panX - panX) < 0.05 && Math.abs(cropS.panY - panY) < 0.05
-                    return (
-                      <button
-                        key={label}
-                        onClick={() => onCropChange({ ...cropS, panX, panY })}
-                        className={cn(
-                          'h-6 rounded text-[11px] transition-colors duration-75',
-                          active
-                            ? 'bg-[var(--accent)] text-white'
-                            : 'bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-                        )}
-                      >
-                        {label}
-                      </button>
-                    )
-                  })}
-                </div>
+              <>
+                <ZoomMinimap
+                  zoom={cropS.zoom}
+                  panX={cropS.panX}
+                  panY={cropS.panY}
+                  thumbnail={clip.thumbnail}
+                  onChange={(px, py) => onCropChange({ ...cropS, panX: px, panY: py })}
+                />
                 <SliderRow
-                  label="X"
+                  label="Pan X"
                   min={-100} max={100} step={1}
                   value={Math.round(cropS.panX * 100)}
                   display={fmtSigned(cropS.panX)}
@@ -626,14 +602,14 @@ function ClipContextMenu({
                   zero
                 />
                 <SliderRow
-                  label="Y"
+                  label="Pan Y"
                   min={-100} max={100} step={1}
                   value={Math.round(cropS.panY * 100)}
                   display={fmtSigned(cropS.panY)}
                   onChange={(v) => onCropChange({ ...cropS, panY: v / 100 })}
                   zero
                 />
-              </div>
+              </>
             )}
             {clip.cropSettings && (
               <button
@@ -829,6 +805,161 @@ function TextSettingsPanel({
         display={`${Math.round(settings.positionY * 100)}%`}
         onChange={(v) => onChange({ ...settings, positionY: v / 100 })}
       />
+    </div>
+  )
+}
+
+// ── Zoom minimap ──────────────────────────────────────────────────────────────
+// Shows a thumbnail of the clip with a draggable box representing the zoomed
+// viewport. Drag the box (or click anywhere) to reposition the zoom focus.
+
+function ZoomMinimap({
+  zoom, panX, panY, thumbnail, onChange
+}: {
+  zoom: number
+  panX: number
+  panY: number
+  thumbnail: string | null
+  onChange: (panX: number, panY: number) => void
+}): JSX.Element {
+  const mapRef = useRef<HTMLDivElement>(null)
+
+  // Zoom box dimensions as fractions of the minimap (1/zoom each axis)
+  const boxW = 1 / zoom
+  const boxH = 1 / zoom
+
+  // Box top-left position as a fraction, derived from panX/panY.
+  // panX=0/panY=0 → centered; panX=±1 → fully to the left/right edge.
+  // halfRange = the maximum distance the box center can travel from 0.5.
+  const halfRange = 0.5 - 0.5 / zoom
+  const boxLeft = 0.5 - boxW / 2 + panX * halfRange
+  const boxTop  = 0.5 - boxH / 2 + panY * halfRange
+
+  // Convert a fractional minimap coordinate to panX/panY, clamped to ±1.
+  function fracToPan(fx: number, fy: number): [number, number] {
+    const newPanX = halfRange !== 0 ? (fx - 0.5) / halfRange : 0
+    const newPanY = halfRange !== 0 ? (fy - 0.5) / halfRange : 0
+    return [
+      Math.max(-1, Math.min(1, newPanX)),
+      Math.max(-1, Math.min(1, newPanY))
+    ]
+  }
+
+  // Drag the zoom box
+  function startBoxDrag(e: React.PointerEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    const map = mapRef.current
+    if (!map) return
+    const rect = map.getBoundingClientRect()
+
+    // Where inside the box did the pointer land (as fraction of minimap)?
+    const clickFracX = (e.clientX - rect.left) / rect.width
+    const clickFracY = (e.clientY - rect.top) / rect.height
+    const boxCenterX = boxLeft + boxW / 2
+    const boxCenterY = boxTop  + boxH / 2
+    const offsetX = clickFracX - boxCenterX
+    const offsetY = clickFracY - boxCenterY
+
+    function onMove(ev: PointerEvent) {
+      const newFracX = (ev.clientX - rect.left) / rect.width
+      const newFracY = (ev.clientY - rect.top) / rect.height
+      // Desired new box center, corrected for where we grabbed
+      const centerX = Math.max(boxW / 2, Math.min(1 - boxW / 2, newFracX - offsetX))
+      const centerY = Math.max(boxH / 2, Math.min(1 - boxH / 2, newFracY - offsetY))
+      onChange(...fracToPan(centerX, centerY))
+    }
+
+    function onUp() {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup',   onUp)
+    }
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup',   onUp)
+  }
+
+  // Click on the background → jump box center to that point
+  function onMapClick(e: React.MouseEvent) {
+    const map = mapRef.current
+    if (!map) return
+    const rect = map.getBoundingClientRect()
+    const fx = (e.clientX - rect.left) / rect.width
+    const fy = (e.clientY - rect.top) / rect.height
+    const cx = Math.max(boxW / 2, Math.min(1 - boxW / 2, fx))
+    const cy = Math.max(boxH / 2, Math.min(1 - boxH / 2, fy))
+    onChange(...fracToPan(cx, cy))
+  }
+
+  const pct = (n: number) => `${(n * 100).toFixed(3)}%`
+
+  return (
+    <div
+      ref={mapRef}
+      className="relative w-full rounded overflow-hidden bg-[var(--bg-base)] border border-[var(--border-subtle)] cursor-crosshair select-none"
+      style={{ aspectRatio: '16 / 9' }}
+      onClick={onMapClick}
+    >
+      {/* Thumbnail background */}
+      {thumbnail ? (
+        <img
+          src={thumbnail}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover"
+          draggable={false}
+        />
+      ) : (
+        // Subtle grid fallback when no thumbnail available
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: [
+              'repeating-linear-gradient(0deg, transparent, transparent 8px, rgba(255,255,255,0.06) 8px, rgba(255,255,255,0.06) 9px)',
+              'repeating-linear-gradient(90deg, transparent, transparent 8px, rgba(255,255,255,0.06) 8px, rgba(255,255,255,0.06) 9px)'
+            ].join(', ')
+          }}
+        />
+      )}
+
+      {/* Dark mask — four strips surrounding the zoom box */}
+      {/* Top */}
+      <div className="absolute inset-x-0 bg-black/60 pointer-events-none"
+        style={{ top: 0, height: pct(boxTop) }} />
+      {/* Bottom */}
+      <div className="absolute inset-x-0 bg-black/60 pointer-events-none"
+        style={{ top: pct(boxTop + boxH), bottom: 0 }} />
+      {/* Left */}
+      <div className="absolute bg-black/60 pointer-events-none"
+        style={{ left: 0, width: pct(boxLeft), top: pct(boxTop), height: pct(boxH) }} />
+      {/* Right */}
+      <div className="absolute bg-black/60 pointer-events-none"
+        style={{ left: pct(boxLeft + boxW), right: 0, top: pct(boxTop), height: pct(boxH) }} />
+
+      {/* Zoom box — draggable */}
+      <div
+        className="absolute border-2 rounded-[2px] cursor-grab active:cursor-grabbing"
+        style={{
+          left:   pct(boxLeft),
+          top:    pct(boxTop),
+          width:  pct(boxW),
+          height: pct(boxH),
+          borderColor: 'var(--accent)',
+          boxShadow: '0 0 0 1px rgba(0,0,0,0.4)'
+        }}
+        onPointerDown={startBoxDrag}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Corner tick marks */}
+        <div className="absolute top-0.5 left-0.5 w-1.5 h-1.5 border-t border-l border-white/60 rounded-tl-[1px]" />
+        <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 border-t border-r border-white/60 rounded-tr-[1px]" />
+        <div className="absolute bottom-0.5 left-0.5 w-1.5 h-1.5 border-b border-l border-white/60 rounded-bl-[1px]" />
+        <div className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 border-b border-r border-white/60 rounded-br-[1px]" />
+      </div>
+
+      {/* Label */}
+      <div className="absolute bottom-1 right-1.5 text-[8px] font-mono text-white/50 pointer-events-none select-none">
+        {zoom.toFixed(1)}×
+      </div>
     </div>
   )
 }
