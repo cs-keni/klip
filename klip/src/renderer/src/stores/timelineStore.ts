@@ -4,9 +4,9 @@ import type { Track, TimelineClip, HistoryEntry } from '@/types/timeline'
 type TrimPatch = Partial<Pick<TimelineClip, 'startTime' | 'trimStart' | 'duration'>>
 
 const DEFAULT_TRACKS: Track[] = [
-  { id: 'v1', type: 'video', name: 'Video 1', isLocked: false, isMuted: false },
-  { id: 'a1', type: 'audio', name: 'Audio 1', isLocked: false, isMuted: false },
-  { id: 'm1', type: 'music', name: 'Music',   isLocked: false, isMuted: false }
+  { id: 'v1', type: 'video', name: 'Video 1', isLocked: false, isMuted: false, isSolo: false },
+  { id: 'a1', type: 'audio', name: 'Audio 1', isLocked: false, isMuted: false, isSolo: false },
+  { id: 'm1', type: 'music', name: 'Music',   isLocked: false, isMuted: false, isSolo: false }
 ]
 
 interface TimelineState {
@@ -39,6 +39,11 @@ interface TimelineState {
 
   // ── Track actions ─────────────────────────────────────────────────────────
   renameTrack: (trackId: string, name: string) => void
+  toggleMute:  (trackId: string) => void
+  toggleSolo:  (trackId: string) => void
+
+  // ── Clip audio ────────────────────────────────────────────────────────────
+  setClipVolume: (clipId: string, volume: number) => void
 
   // ── History ───────────────────────────────────────────────────────────────
   undo: () => void
@@ -166,6 +171,21 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       past: [...s.past.slice(-49), snapshot(s)],
       future: [],
       tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, name } : t))
+    })),
+
+  toggleMute: (trackId) =>
+    set((s) => ({
+      tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, isMuted: !t.isMuted } : t))
+    })),
+
+  toggleSolo: (trackId) =>
+    set((s) => ({
+      tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, isSolo: !t.isSolo } : t))
+    })),
+
+  setClipVolume: (clipId, volume) =>
+    set((s) => ({
+      clips: s.clips.map((c) => (c.id === clipId ? { ...c, volume: Math.max(0, Math.min(1, volume)) } : c))
     })),
 
   // ── History ──────────────────────────────────────────────────────────────

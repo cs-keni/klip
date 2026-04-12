@@ -2,8 +2,8 @@ export type TrackType = 'video' | 'audio' | 'music'
 
 export const TRACK_HEIGHT: Record<TrackType, number> = {
   video: 64,
-  audio: 48,
-  music: 48
+  audio: 56,
+  music: 56
 }
 
 export const HEADER_WIDTH = 160
@@ -14,6 +14,7 @@ export interface Track {
   name: string
   isLocked: boolean
   isMuted: boolean
+  isSolo: boolean
 }
 
 export interface TimelineClip {
@@ -38,6 +39,8 @@ export interface TimelineClip {
 
   /** ID of the paired audio/video clip (for linked video + audio clips). */
   linkedClipId?: string
+  /** Playback volume multiplier (0–1, default 1). */
+  volume?: number
 }
 
 export interface HistoryEntry {

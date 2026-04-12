@@ -59,11 +59,13 @@
 - [x] Progress bar in preview (clickable scrub)
 - [x] Fullscreen button (native video fullscreen)
 
-## Phase 5 — Audio
-- [ ] Waveform rendering for audio/video clips on timeline
-- [ ] Per-clip volume control
-- [ ] Per-track mute/solo
-- [ ] Audio normalization (detect loudness, suggest gain)
+## Phase 5 — Audio ✅
+- [x] Waveform rendering for audio clips on timeline (Web Audio API, canvas-based)
+- [ ] Waveform rendering for video clips (requires FFmpeg — Phase 7)
+- [x] Per-clip volume control (right-click clip → volume slider)
+- [x] Per-track mute/solo (wired buttons, visual feedback, affects playback)
+- [x] Audio/music track playback in preview (hidden <audio> element, wall-clock sync)
+- [ ] Audio normalization (detect loudness, suggest gain) — deferred
 
 ## Phase 6 — Effects & Overlays
 - [ ] Crossfade / cut transitions between clips

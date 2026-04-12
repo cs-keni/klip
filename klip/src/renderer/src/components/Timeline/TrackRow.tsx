@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Lock, Volume2, Music, Film, Pencil } from 'lucide-react'
+import { Lock, Volume2, VolumeX, Pencil } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTimelineStore } from '@/stores/timelineStore'
 import { useMediaStore } from '@/stores/mediaStore'
@@ -31,7 +31,7 @@ export default function TrackRow({
   contentWidth,
   selectedClipId
 }: TrackRowProps): JSX.Element {
-  const { addClip, selectClip, renameTrack } = useTimelineStore()
+  const { addClip, selectClip, renameTrack, toggleMute, toggleSolo } = useTimelineStore()
   const { clips: mediaClips } = useMediaStore()
 
   const [isRenaming, setIsRenaming] = useState(false)
@@ -132,7 +132,10 @@ export default function TrackRow({
     >
       {/* ── Track header (sticky) ───────────────────────────────────────── */}
       <div
-        className="shrink-0 flex items-center gap-1.5 px-2 border-r border-[var(--border-subtle)] bg-[var(--bg-surface)] z-10 cursor-default"
+        className={cn(
+          'shrink-0 flex items-center gap-1.5 px-2 border-r border-[var(--border-subtle)] bg-[var(--bg-surface)] z-10 cursor-default transition-opacity duration-150',
+          track.isMuted && 'opacity-50'
+        )}
         style={{ width: HEADER_WIDTH, position: 'sticky', left: 0 }}
         onContextMenu={(e) => {
           e.preventDefault()
@@ -163,17 +166,23 @@ export default function TrackRow({
 
         {/* Track actions */}
         <div className="flex items-center gap-0.5 opacity-0 group-hover/track:opacity-100 transition-opacity duration-100">
+          {/* Mute */}
           <TrackIconButton
-            onClick={() => {}}
+            onClick={() => toggleMute(track.id)}
             title={track.isMuted ? 'Unmute' : 'Mute'}
+            active={track.isMuted}
+            icon={track.isMuted ? <VolumeX size={11} /> : <Volume2 size={11} />}
+          />
+          {/* Solo */}
+          <TrackIconButton
+            onClick={() => toggleSolo(track.id)}
+            title={track.isSolo ? 'Unsolo' : 'Solo'}
+            active={track.isSolo}
             icon={
-              track.type === 'video'
-                ? <Film size={11} />
-                : track.type === 'music'
-                ? <Music size={11} />
-                : <Volume2 size={11} />
+              <span className="text-[9px] font-bold leading-none">S</span>
             }
           />
+          {/* Lock (placeholder — Phase 8) */}
           <TrackIconButton
             onClick={() => {}}
             title={track.isLocked ? 'Unlock' : 'Lock track'}
@@ -205,7 +214,8 @@ export default function TrackRow({
           'relative flex-1 transition-colors duration-100',
           isDragOver
             ? 'bg-[var(--accent-glow)] ring-1 ring-inset ring-[var(--accent-dim)]'
-            : 'bg-[var(--bg-base)] hover:bg-[rgba(255,255,255,0.01)]'
+            : 'bg-[var(--bg-base)] hover:bg-[rgba(255,255,255,0.01)]',
+          track.isMuted && 'opacity-50'
         )}
         style={{ width: contentWidth }}
         onClick={() => selectClip(null)}
@@ -292,17 +302,24 @@ function TrackContextMenu({
 function TrackIconButton({
   icon,
   title,
-  onClick
+  onClick,
+  active = false
 }: {
   icon: ReactNode
   title: string
   onClick: () => void
+  active?: boolean
 }): JSX.Element {
   return (
     <button
       onClick={onClick}
       title={title}
-      className="flex items-center justify-center w-5 h-5 rounded text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors duration-75"
+      className={cn(
+        'flex items-center justify-center w-5 h-5 rounded transition-colors duration-75',
+        active
+          ? 'text-[var(--accent-light)] bg-[var(--accent-glow)]'
+          : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]'
+      )}
     >
       {icon}
     </button>

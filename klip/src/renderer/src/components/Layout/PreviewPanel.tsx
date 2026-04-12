@@ -8,6 +8,15 @@ import { useTimelineStore } from '@/stores/timelineStore'
 import { useMediaStore } from '@/stores/mediaStore'
 import type { TimelineClip } from '@/types/timeline'
 
+/** Returns true if a track is effectively muted given the global solo state. */
+function isEffectivelyMuted(trackId: string, tracks: ReturnType<typeof useTimelineStore.getState>['tracks']): boolean {
+  const track = tracks.find((t) => t.id === trackId)
+  if (!track) return false
+  if (track.isMuted) return true
+  const anySolo = tracks.some((t) => t.isSolo)
+  return anySolo && !track.isSolo
+}
+
 export default function PreviewPanel(): JSX.Element {
   // ── Store ────────────────────────────────────────────────────────────────
   const {
@@ -18,7 +27,7 @@ export default function PreviewPanel(): JSX.Element {
 
   const { clips: mediaClips } = useMediaStore()
 
-  // ── Derived: clips on the first video track, sorted ──────────────────────
+  // ── Derived: video track clips ───────────────────────────────────────────
   const videoTrack = useMemo(() => tracks.find((t) => t.type === 'video'), [tracks])
 
   const videoClips = useMemo(
@@ -31,24 +40,41 @@ export default function PreviewPanel(): JSX.Element {
     [timelineClips, videoTrack]
   )
 
+  // ── Derived: audio + music track clips (first non-video track with clips) ─
+  const audioTracks = useMemo(() => tracks.filter((t) => t.type === 'audio' || t.type === 'music'), [tracks])
+
+  const audioClips = useMemo(
+    () =>
+      timelineClips
+        .filter((c) => audioTracks.some((t) => t.id === c.trackId))
+        .sort((a, b) => a.startTime - b.startTime),
+    [timelineClips, audioTracks]
+  )
+
   const totalDuration = useMemo(() => {
-    if (videoClips.length === 0) return 0
-    const last = videoClips[videoClips.length - 1]
-    return last.startTime + last.duration
-  }, [videoClips])
+    const allClips = [...videoClips, ...audioClips]
+    if (allClips.length === 0) return 0
+    return allClips.reduce((max, c) => Math.max(max, c.startTime + c.duration), 0)
+  }, [videoClips, audioClips])
 
   // ── Refs (stable across renders, safe to use inside rAF closures) ────────
-  const videoRef       = useRef<HTMLVideoElement>(null)
-  const isPlayingRef   = useRef(false)
-  const rafRef         = useRef<number | null>(null)
-  const currentSrcRef  = useRef('')          // tracks what src we last set
-  const videoClipsRef  = useRef(videoClips)
-  const mediaClipsRef  = useRef(mediaClips)
-  const playheadRef    = useRef(playheadTime)
+  const videoRef          = useRef<HTMLVideoElement>(null)
+  const audioRef          = useRef<HTMLAudioElement>(null)
+  const isPlayingRef      = useRef(false)
+  const rafRef            = useRef<number | null>(null)
+  const currentSrcRef     = useRef('')
+  const currentAudioSrcRef = useRef('')
+  const videoClipsRef     = useRef(videoClips)
+  const audioClipsRef     = useRef(audioClips)
+  const mediaClipsRef     = useRef(mediaClips)
+  const tracksRef         = useRef(tracks)
+  const playheadRef       = useRef(playheadTime)
 
   // Keep refs in sync with latest renders
   useEffect(() => { videoClipsRef.current  = videoClips  }, [videoClips])
+  useEffect(() => { audioClipsRef.current  = audioClips  }, [audioClips])
   useEffect(() => { mediaClipsRef.current  = mediaClips  }, [mediaClips])
+  useEffect(() => { tracksRef.current      = tracks      }, [tracks])
   useEffect(() => { playheadRef.current    = playheadTime }, [playheadTime])
   useEffect(() => { isPlayingRef.current   = isPlaying   }, [isPlaying])
 
@@ -87,7 +113,48 @@ export default function PreviewPanel(): JSX.Element {
     isPlayingRef.current = false
     cancelRaf()
     videoRef.current?.pause()
+    audioRef.current?.pause()
     setIsPlaying(false)
+  }
+
+  // ── Audio track helpers ──────────────────────────────────────────────────
+
+  function findAudioClipAt(time: number): TimelineClip | null {
+    return audioClipsRef.current.find(
+      (c) => time >= c.startTime && time < c.startTime + c.duration
+    ) ?? null
+  }
+
+  function startAudioPlayback(fromTime: number) {
+    const audio = audioRef.current
+    if (!audio) return
+
+    const tlClip = findAudioClipAt(fromTime)
+    if (!tlClip) { audio.pause(); return }
+
+    const media = mediaClipsRef.current.find((m) => m.id === tlClip.mediaClipId)
+    if (!media?.path) return
+
+    const trackId = tlClip.trackId
+    audio.muted  = isEffectivelyMuted(trackId, tracksRef.current)
+    audio.volume = tlClip.volume ?? 1
+
+    const url    = pathToFileUrl(media.path)
+    const seekTo = tlClip.trimStart + (fromTime - tlClip.startTime)
+
+    if (currentAudioSrcRef.current !== url) {
+      currentAudioSrcRef.current = url
+      audio.src = url
+      audio.load()
+      audio.addEventListener('loadedmetadata', () => {
+        if (!isPlayingRef.current) return
+        audio.currentTime = seekTo
+        audio.play().catch(() => {})
+      }, { once: true })
+    } else {
+      audio.currentTime = seekTo
+      audio.play().catch(() => {})
+    }
   }
 
   function playClip(tlClip: TimelineClip, fromPlayhead: number) {
@@ -95,6 +162,12 @@ export default function PreviewPanel(): JSX.Element {
     const media = getMediaClip(tlClip)
     const video = videoRef.current
     if (!video) return
+
+    // Apply per-clip volume and track mute to the video element
+    if (media?.type === 'video') {
+      video.volume = tlClip.volume ?? 1
+      video.muted  = isEffectivelyMuted(tlClip.trackId, tracksRef.current)
+    }
 
     if (!media || media.type !== 'video' || !media.path) {
       // Non-video clip (image / color): advance time via rAF then continue
@@ -208,6 +281,10 @@ export default function PreviewPanel(): JSX.Element {
     // Cancel current loop and restart from new position
     cancelRaf()
     videoRef.current?.pause()
+    audioRef.current?.pause()
+
+    // Restart audio from new position
+    startAudioPlayback(time)
 
     const clip = findClipAt(time)
     if (clip) {
@@ -235,8 +312,9 @@ export default function PreviewPanel(): JSX.Element {
 
     isPlayingRef.current = true
     const time = playheadRef.current
-    const clip = findClipAt(time)
 
+    // Video track
+    const clip = findClipAt(time)
     if (clip) {
       playClip(clip, time)
     } else {
@@ -249,8 +327,12 @@ export default function PreviewPanel(): JSX.Element {
         }
       } else {
         setIsPlaying(false)
+        return
       }
     }
+
+    // Audio track (fires and forgets — browser keeps it in sync with wall clock)
+    startAudioPlayback(time)
 
     return () => { stopPlayback() }
   }, [isPlaying]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -327,6 +409,9 @@ export default function PreviewPanel(): JSX.Element {
           playsInline
           crossOrigin="anonymous"
         />
+
+        {/* Hidden audio element for audio/music track clips */}
+        <audio ref={audioRef} className="hidden" crossOrigin="anonymous" />
 
         {/* Color clip */}
         {showColor && (
