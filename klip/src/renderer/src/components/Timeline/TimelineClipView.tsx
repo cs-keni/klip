@@ -584,22 +584,57 @@ function ClipContextMenu({
               display={`${cropS.zoom.toFixed(2)}×`}
               onChange={(v) => onCropChange({ ...cropS, zoom: v / 100 })}
             />
-            <SliderRow
-              label="Pan X"
-              min={-100} max={100} step={1}
-              value={Math.round(cropS.panX * 100)}
-              display={fmtSigned(cropS.panX)}
-              onChange={(v) => onCropChange({ ...cropS, panX: v / 100 })}
-              zero
-            />
-            <SliderRow
-              label="Pan Y"
-              min={-100} max={100} step={1}
-              value={Math.round(cropS.panY * 100)}
-              display={fmtSigned(cropS.panY)}
-              onChange={(v) => onCropChange({ ...cropS, panY: v / 100 })}
-              zero
-            />
+            {/* Position presets — only useful when zoomed in */}
+            {cropS.zoom > 1 && (
+              <div className="space-y-1">
+                <span className="text-[9px] text-[var(--text-muted)] uppercase tracking-wide">Position</span>
+                <div className="grid grid-cols-3 gap-0.5">
+                  {([
+                    { label: '↖', panX: -1, panY: -1 },
+                    { label: '↑',  panX:  0, panY: -1 },
+                    { label: '↗', panX:  1, panY: -1 },
+                    { label: '←', panX: -1, panY:  0 },
+                    { label: '·',  panX:  0, panY:  0 },
+                    { label: '→', panX:  1, panY:  0 },
+                    { label: '↙', panX: -1, panY:  1 },
+                    { label: '↓',  panX:  0, panY:  1 },
+                    { label: '↘', panX:  1, panY:  1 },
+                  ] as const).map(({ label, panX, panY }) => {
+                    const active = Math.abs(cropS.panX - panX) < 0.05 && Math.abs(cropS.panY - panY) < 0.05
+                    return (
+                      <button
+                        key={label}
+                        onClick={() => onCropChange({ ...cropS, panX, panY })}
+                        className={cn(
+                          'h-6 rounded text-[11px] transition-colors duration-75',
+                          active
+                            ? 'bg-[var(--accent)] text-white'
+                            : 'bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                        )}
+                      >
+                        {label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <SliderRow
+                  label="X"
+                  min={-100} max={100} step={1}
+                  value={Math.round(cropS.panX * 100)}
+                  display={fmtSigned(cropS.panX)}
+                  onChange={(v) => onCropChange({ ...cropS, panX: v / 100 })}
+                  zero
+                />
+                <SliderRow
+                  label="Y"
+                  min={-100} max={100} step={1}
+                  value={Math.round(cropS.panY * 100)}
+                  display={fmtSigned(cropS.panY)}
+                  onChange={(v) => onCropChange({ ...cropS, panY: v / 100 })}
+                  zero
+                />
+              </div>
+            )}
             {clip.cropSettings && (
               <button
                 onClick={() => onCropChange(undefined)}

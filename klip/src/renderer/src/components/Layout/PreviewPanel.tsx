@@ -455,6 +455,23 @@ export default function PreviewPanel(): JSX.Element {
     }
   }, [playheadTime, activeMediaClip?.id, activeTimelineClip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Re-apply effects when color/crop settings change while paused ────────
+  // The scrub effect above only re-runs on clip/time changes, not settings changes.
+  // This separate effect watches the individual setting values so adjusting
+  // brightness/contrast/zoom in the context menu is immediately visible.
+  useEffect(() => {
+    if (isPlayingRef.current) return
+    if (activeTimelineClip) applyClipEffects(activeTimelineClip)
+    else clearClipEffects()
+  }, [ // eslint-disable-line react-hooks/exhaustive-deps
+    activeTimelineClip?.colorSettings?.brightness,
+    activeTimelineClip?.colorSettings?.contrast,
+    activeTimelineClip?.colorSettings?.saturation,
+    activeTimelineClip?.cropSettings?.zoom,
+    activeTimelineClip?.cropSettings?.panX,
+    activeTimelineClip?.cropSettings?.panY,
+  ])
+
   // Active text clips at playhead
   const activeTextClips = useMemo(
     () => overlayClips.filter(
