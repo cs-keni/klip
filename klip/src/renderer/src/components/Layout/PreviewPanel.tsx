@@ -1,12 +1,15 @@
 import { useRef, useEffect, useMemo, useState, useCallback, type ReactNode, type CSSProperties } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, Volume2, Maximize2, Repeat, Zap, X, Loader2 } from 'lucide-react'
+import { Play, Pause, Volume2, Maximize2, Repeat, Zap, X, Loader2, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip } from '@/components/ui/tooltip'
 import { pathToFileUrl, formatTimecode } from '@/lib/mediaUtils'
 import { useTimelineStore } from '@/stores/timelineStore'
 import { useMediaStore } from '@/stores/mediaStore'
 import type { TimelineClip, TextSettings } from '@/types/timeline'
+
+const PREVIEW_SPEEDS = [0.25, 0.5, 0.75, 1, 1.5, 2] as const
+type PreviewSpeed = typeof PREVIEW_SPEEDS[number]
 
 /** Returns true if a track is effectively muted given the global solo state. */
 function isEffectivelyMuted(trackId: string, tracks: ReturnType<typeof useTimelineStore.getState>['tracks']): boolean {
@@ -25,11 +28,45 @@ export default function PreviewPanel(): JSX.Element {
   const [qpError, setQpError]         = useState<string | null>(null)
   const qpVideoRef                    = useRef<HTMLVideoElement>(null)
 
+  // ── Preview speed ─────────────────────────────────────────────────────────
+  const [previewSpeed, setPreviewSpeed] = useState<PreviewSpeed>(1)
+
+  // ── Controls auto-hide ────────────────────────────────────────────────────
+  const [showControls, setShowControls] = useState(true)
+  const hideTimerRef                    = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // ── Video loading state ───────────────────────────────────────────────────
+  const [isVideoLoading, setIsVideoLoading] = useState(false)
+
+  // ── Scrub bar hover thumbnail ─────────────────────────────────────────────
+  const [scrubHover, setScrubHover] = useState<{ frac: number; clientX: number } | null>(null)
+  const [thumbUrl, setThumbUrl]     = useState<string | null>(null)
+  const thumbVideoRef               = useRef<HTMLVideoElement>(null)
+  const thumbGenRef                 = useRef(0)
+  const scrubBarRef                 = useRef<HTMLDivElement>(null)
+
+  // ── Panel ref for fullscreen ──────────────────────────────────────────────
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  // ── Speed selector open ───────────────────────────────────────────────────
+  const [showSpeedMenu, setShowSpeedMenu] = useState(false)
+  const speedMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!showSpeedMenu) return
+    function onOutside(e: MouseEvent) {
+      if (!speedMenuRef.current?.contains(e.target as Node)) setShowSpeedMenu(false)
+    }
+    document.addEventListener('mousedown', onOutside)
+    return () => document.removeEventListener('mousedown', onOutside)
+  }, [showSpeedMenu])
+
   // ── Store ────────────────────────────────────────────────────────────────
   const {
     tracks, clips: timelineClips, transitions,
     playheadTime, setPlayheadTime,
     isPlaying, setIsPlaying,
+    shuttleSpeed, setShuttleSpeed,
     loopIn, loopOut, loopEnabled,
     toggleLoop
   } = useTimelineStore()
@@ -95,6 +132,8 @@ export default function PreviewPanel(): JSX.Element {
   const loopInRef            = useRef(loopIn)
   const loopOutRef           = useRef(loopOut)
   const loopEnabledRef       = useRef(loopEnabled)
+  const shuttleSpeedRef      = useRef(shuttleSpeed)
+  const previewSpeedRef      = useRef(previewSpeed)
 
   useEffect(() => { videoClipsRef.current      = videoClips   }, [videoClips])
   useEffect(() => { audioClipsRef.current      = audioClips   }, [audioClips])
@@ -106,6 +145,8 @@ export default function PreviewPanel(): JSX.Element {
   useEffect(() => { loopInRef.current          = loopIn       }, [loopIn])
   useEffect(() => { loopOutRef.current         = loopOut      }, [loopOut])
   useEffect(() => { loopEnabledRef.current     = loopEnabled  }, [loopEnabled])
+  useEffect(() => { shuttleSpeedRef.current    = shuttleSpeed }, [shuttleSpeed])
+  useEffect(() => { previewSpeedRef.current    = previewSpeed }, [previewSpeed])
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   function findClipAt(time: number): TimelineClip | null {
@@ -119,6 +160,15 @@ export default function PreviewPanel(): JSX.Element {
       videoClipsRef.current
         .filter((c) => c.startTime >= time - 0.01)
         .sort((a, b) => a.startTime - b.startTime)[0] ?? null
+    )
+  }
+
+  function findPrevClipBefore(time: number): TimelineClip | null {
+    // Clip whose end <= time (with small tolerance) — sorted by startTime desc
+    return (
+      videoClipsRef.current
+        .filter((c) => c.startTime + c.duration <= time + 0.05)
+        .sort((a, b) => b.startTime - a.startTime)[0] ?? null
     )
   }
 
@@ -188,6 +238,53 @@ export default function PreviewPanel(): JSX.Element {
     video.style.opacity   = '1'
   }
 
+  // ── Video loading events ──────────────────────────────────────────────────
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+    const onWaiting  = () => setIsVideoLoading(true)
+    const onCanPlay  = () => setIsVideoLoading(false)
+    const onPlaying  = () => setIsVideoLoading(false)
+    video.addEventListener('waiting',  onWaiting)
+    video.addEventListener('canplay',  onCanPlay)
+    video.addEventListener('playing',  onPlaying)
+    return () => {
+      video.removeEventListener('waiting',  onWaiting)
+      video.removeEventListener('canplay',  onCanPlay)
+      video.removeEventListener('playing',  onPlaying)
+    }
+  }, [])
+
+  // ── Controls auto-hide ────────────────────────────────────────────────────
+  const resetHideTimer = useCallback(() => {
+    setShowControls(true)
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
+    hideTimerRef.current = setTimeout(() => setShowControls(false), 2500)
+  }, [])
+
+  // Clean up the timer on unmount
+  useEffect(() => () => {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
+  }, [])
+
+  // ── Fullscreen — F key ────────────────────────────────────────────────────
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      if (e.key === 'f' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault()
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {})
+        } else {
+          panelRef.current?.requestFullscreen?.().catch(() => {})
+        }
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
+
   // ── Playback engine ──────────────────────────────────────────────────────
   function stopPlayback() {
     isPlayingRef.current = false
@@ -196,6 +293,7 @@ export default function PreviewPanel(): JSX.Element {
     audioRef.current?.pause()
     clearClipEffects()
     setIsPlaying(false)
+    // Do NOT reset shuttleSpeed here — callers manage that (Space/K key, play button)
   }
 
   // ── Audio track helpers ──────────────────────────────────────────────────
@@ -257,7 +355,10 @@ export default function PreviewPanel(): JSX.Element {
     if (media?.type === 'video') {
       video.volume = tlClip.volume ?? 1
       video.muted  = isEffectivelyMuted(tlClip.trackId, tracksRef.current)
-      video.playbackRate = speed
+      // Effective rate = clip speed × user preview speed × shuttle multiplier (forward only)
+      const shuttle = shuttleSpeedRef.current
+      const effectiveRate = speed * previewSpeedRef.current * (shuttle > 0 ? shuttle : 1)
+      video.playbackRate = Math.min(16, Math.max(0.0625, effectiveRate))
     }
 
     if (!media || media.type !== 'video' || !media.path) {
@@ -288,8 +389,17 @@ export default function PreviewPanel(): JSX.Element {
       if (!isPlayingRef.current) return
       const v = videoRef.current
       if (!v) return
+      const shuttle = shuttleSpeedRef.current
+      // If in reverse shuttle, don't use native video play — reverse RAF handles it
+      if (shuttle < 0) {
+        v.currentTime = seekTo
+        applyClipEffects(tlClip)
+        runReverseRaf(tlClip)
+        return
+      }
       v.currentTime  = seekTo
-      v.playbackRate = speed
+      const effectiveRate = speed * previewSpeedRef.current * (shuttle > 0 ? shuttle : 1)
+      v.playbackRate = Math.min(16, Math.max(0.0625, effectiveRate))
       applyClipEffects(tlClip)
       v.play().catch((err) => {
         if (isPlayingRef.current && (err as DOMException).name !== 'AbortError') stopPlayback()
@@ -365,6 +475,116 @@ export default function PreviewPanel(): JSX.Element {
     rafRef.current = requestAnimationFrame(tick)
   }
 
+  /**
+   * Reverse playback — HTML5 video cannot play backward natively.
+   * We manually step currentTime backward each animation frame.
+   */
+  function runReverseRaf(tlClip: TimelineClip) {
+    cancelRaf()
+    const clipSpeed = tlClip.speed ?? 1
+
+    function tick() {
+      const video = videoRef.current
+      if (!video || !isPlayingRef.current) return
+
+      const shuttle = Math.abs(shuttleSpeedRef.current)
+      const dt = (1 / 60) * shuttle * previewSpeedRef.current
+      const newVideoTime = Math.max(tlClip.trimStart, video.currentTime - dt)
+      video.currentTime = newVideoTime
+
+      // Compute the corresponding timeline position
+      const newPlayhead = tlClip.startTime + (newVideoTime - tlClip.trimStart) / clipSpeed
+      setPlayheadTime(Math.max(0, newPlayhead))
+
+      // Loop check
+      if (
+        loopEnabledRef.current &&
+        loopInRef.current !== null &&
+        loopOutRef.current !== null &&
+        newPlayhead <= loopInRef.current
+      ) {
+        cancelRaf()
+        seekTo(loopOutRef.current)
+        return
+      }
+
+      // Hit the start of this clip — try the previous clip
+      if (newVideoTime <= tlClip.trimStart + 0.01) {
+        const prevClip = findPrevClipBefore(tlClip.startTime - 0.01)
+        if (prevClip) {
+          // Load the previous clip and continue reversing from its end
+          const prevMedia = mediaClipsRef.current.find((m) => m.id === prevClip.mediaClipId)
+          if (prevMedia?.type === 'video' && prevMedia.path) {
+            const prevUrl = pathToFileUrl(prevMedia.path)
+            const prevClipEnd = prevClip.trimStart + prevClip.duration * (prevClip.speed ?? 1)
+            applyClipEffects(prevClip)
+            if (currentSrcRef.current !== prevUrl) {
+              currentSrcRef.current = prevUrl
+              video.src = prevUrl
+              video.load()
+              video.addEventListener('loadedmetadata', () => {
+                if (!isPlayingRef.current) return
+                video.currentTime = Math.min(prevClipEnd, video.duration ?? prevClipEnd)
+                runReverseRaf(prevClip)
+              }, { once: true })
+            } else {
+              video.currentTime = Math.min(prevClipEnd, video.duration ?? prevClipEnd)
+              runReverseRaf(prevClip)
+            }
+          } else {
+            // Non-video prev clip — reverse through it purely by time
+            const prevEnd = prevClip.startTime + prevClip.duration
+            reverseAdvanceGap(newPlayhead, prevClip.startTime, () => {
+              const beforePrev = findPrevClipBefore(prevClip.startTime - 0.01)
+              if (beforePrev) {
+                const m = mediaClipsRef.current.find((x) => x.id === beforePrev.mediaClipId)
+                if (m?.type === 'video' && m.path) {
+                  playClip(beforePrev, prevEnd) // reuse playClip which handles reverse
+                } else {
+                  stopPlayback()
+                }
+              } else {
+                // At the very start
+                setPlayheadTime(0)
+                stopPlayback()
+              }
+            })
+          }
+        } else {
+          // No previous clip — hit the start of the timeline
+          setPlayheadTime(0)
+          stopPlayback()
+        }
+        return
+      }
+
+      rafRef.current = requestAnimationFrame(tick)
+    }
+
+    rafRef.current = requestAnimationFrame(tick)
+  }
+
+  /** Time-only reverse advance (for non-video clips during reverse shuttle). */
+  function reverseAdvanceGap(from: number, to: number, onDone: () => void) {
+    if (!isPlayingRef.current) return
+    cancelRaf()
+    if (from <= to + 0.001) { onDone(); return }
+
+    const startWall = performance.now()
+    const shuttle   = Math.abs(shuttleSpeedRef.current)
+
+    function tick(now: number) {
+      if (!isPlayingRef.current) return
+      const elapsed  = (now - startWall) / 1000
+      const newTime  = Math.max(to, from - elapsed * shuttle * previewSpeedRef.current)
+      setPlayheadTime(newTime)
+      if (newTime <= to) { onDone(); return }
+      rafRef.current = requestAnimationFrame(tick)
+    }
+
+    rafRef.current = requestAnimationFrame(tick)
+  }
+
   function advanceGap(from: number, to: number, onDone: () => void) {
     if (!isPlayingRef.current) return
     cancelRaf()
@@ -426,7 +646,7 @@ export default function PreviewPanel(): JSX.Element {
     }
   }
 
-  // Start / stop playback when isPlaying changes
+  // Start / stop playback when isPlaying or shuttleSpeed changes
   useEffect(() => {
     if (!isPlaying) {
       stopPlayback()
@@ -434,8 +654,55 @@ export default function PreviewPanel(): JSX.Element {
     }
 
     isPlayingRef.current = true
-    const time = playheadRef.current
+    const time    = playheadRef.current
+    const shuttle = shuttleSpeedRef.current
 
+    // ── Reverse shuttle ──────────────────────────────────────────────────────
+    if (shuttle < 0) {
+      const clip = findClipAt(time)
+      if (clip) {
+        const media = mediaClipsRef.current.find((m) => m.id === clip.mediaClipId)
+        if (media?.type === 'video' && media.path) {
+          const url    = pathToFileUrl(media.path)
+          const seekTo = clip.trimStart + (time - clip.startTime) * (clip.speed ?? 1)
+          applyClipEffects(clip)
+          if (currentSrcRef.current !== url) {
+            currentSrcRef.current = url
+            const vid = videoRef.current!
+            vid.src = url
+            vid.load()
+            vid.addEventListener('loadedmetadata', () => {
+              if (!isPlayingRef.current) return
+              vid.currentTime = seekTo
+              runReverseRaf(clip)
+            }, { once: true })
+          } else {
+            videoRef.current!.currentTime = seekTo
+            runReverseRaf(clip)
+          }
+        } else {
+          // Non-video clip — reverse through it by time
+          reverseAdvanceGap(time, clip.startTime, () => {
+            const prevClip = findPrevClipBefore(clip.startTime - 0.01)
+            if (prevClip) playClip(prevClip, prevClip.startTime + prevClip.duration)
+            else stopPlayback()
+          })
+        }
+      } else {
+        // In a gap — reverse to the previous clip
+        const prevClip = findPrevClipBefore(time)
+        if (prevClip) {
+          const prevEnd = prevClip.startTime + prevClip.duration
+          reverseAdvanceGap(time, prevEnd, () => playClip(prevClip, prevEnd))
+        } else {
+          setPlayheadTime(0)
+          stopPlayback()
+        }
+      }
+      return () => { stopPlayback() }
+    }
+
+    // ── Forward playback ─────────────────────────────────────────────────────
     const clip = findClipAt(time)
     if (clip) {
       playClip(clip, time)
@@ -456,7 +723,7 @@ export default function PreviewPanel(): JSX.Element {
     startAudioPlayback(time)
 
     return () => { stopPlayback() }
-  }, [isPlaying]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isPlaying, shuttleSpeed]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Scrub (paused) ───────────────────────────────────────────────────────
   const activeTimelineClip = useMemo(() => findClipAt(playheadTime), [playheadTime, videoClips]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -515,6 +782,62 @@ export default function PreviewPanel(): JSX.Element {
     activeTimelineClip?.cropSettings?.panX,
     activeTimelineClip?.cropSettings?.panY,
   ])
+
+  // ── Scrub bar hover thumbnail generation ─────────────────────────────────
+  useEffect(() => {
+    if (!scrubHover || totalDuration <= 0) {
+      setThumbUrl(null)
+      return
+    }
+
+    const hoverTime = scrubHover.frac * totalDuration
+    const clip = videoClipsRef.current.find(
+      (c) => hoverTime >= c.startTime && hoverTime < c.startTime + c.duration
+    )
+    if (!clip) { setThumbUrl(null); return }
+
+    const media = mediaClipsRef.current.find((m) => m.id === clip.mediaClipId)
+    if (!media?.path || media.type !== 'video') { setThumbUrl(null); return }
+
+    const tv = thumbVideoRef.current
+    if (!tv) return
+
+    const url     = pathToFileUrl(media.path)
+    const seekSrc = clip.trimStart + (hoverTime - clip.startTime) * (clip.speed ?? 1)
+    const gen     = ++thumbGenRef.current
+
+    function capture() {
+      if (thumbGenRef.current !== gen) return
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width  = 160
+        canvas.height = 90
+        const ctx = canvas.getContext('2d')
+        if (ctx && tv) {
+          ctx.drawImage(tv, 0, 0, 160, 90)
+          setThumbUrl(canvas.toDataURL('image/jpeg', 0.75))
+        }
+      } catch { /* CORS / security guard */ }
+    }
+
+    tv.addEventListener('seeked', capture, { once: true })
+
+    if (tv.getAttribute('data-thumb-src') !== url) {
+      tv.setAttribute('data-thumb-src', url)
+      tv.src = url
+      tv.load()
+      tv.addEventListener('loadedmetadata', () => {
+        tv.currentTime = Math.max(0, Math.min(seekSrc, tv.duration ?? seekSrc))
+      }, { once: true })
+    } else {
+      tv.currentTime = Math.max(0, Math.min(seekSrc, tv.duration ?? seekSrc))
+    }
+
+    return () => {
+      thumbGenRef.current++ // invalidate in-flight capture
+      tv.removeEventListener('seeked', capture)
+    }
+  }, [scrubHover?.frac, totalDuration]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Quick Render Preview ─────────────────────────────────────────────────
 
@@ -629,9 +952,26 @@ export default function PreviewPanel(): JSX.Element {
   const loopInFrac  = (loopIn  !== null && totalDuration > 0) ? Math.min(1, loopIn  / totalDuration) : null
   const loopOutFrac = (loopOut !== null && totalDuration > 0) ? Math.min(1, loopOut / totalDuration) : null
 
+  // ── Derived shuttle display ───────────────────────────────────────────────
+  const shuttleLabel: string | null = (() => {
+    if (shuttleSpeed === 0 || !isPlaying) return previewSpeed !== 1 ? `${previewSpeed}x` : null
+    if (shuttleSpeed > 0 && shuttleSpeed !== 1) return `${shuttleSpeed}x`
+    if (shuttleSpeed < 0) return `${shuttleSpeed}x`
+    return null
+  })()
+
   // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full bg-[var(--bg-base)]">
+    <div
+      ref={panelRef}
+      className="preview-panel flex flex-col h-full bg-[var(--bg-base)]"
+      onMouseMove={resetHideTimer}
+      onMouseEnter={resetHideTimer}
+      onMouseLeave={() => {
+        if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
+        setShowControls(false)
+      }}
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-[var(--border-subtle)] shrink-0 bg-[var(--bg-surface)]">
         <span className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-widest">
@@ -723,6 +1063,9 @@ export default function PreviewPanel(): JSX.Element {
         {/* Hidden audio element */}
         <audio ref={audioRef} className="hidden" crossOrigin="anonymous" />
 
+        {/* Hidden thumbnail video — used for scrub bar hover frame capture */}
+        <video ref={thumbVideoRef} className="hidden" crossOrigin="anonymous" preload="metadata" />
+
         {/* Color clip */}
         {showColor && (
           <div
@@ -771,144 +1114,306 @@ export default function PreviewPanel(): JSX.Element {
           )
         ))}
 
-        {/* ── Controls overlay ─────────────────────────────────────────── */}
-        <div className="absolute inset-x-0 bottom-0 flex flex-col">
-          {/* Progress / scrub bar */}
-          <div
-            className="px-3 pb-1 pt-2 cursor-pointer group/bar"
-            onClick={(e) => {
-              if (totalDuration <= 0) return
-              const track = e.currentTarget.querySelector<HTMLDivElement>('[data-track]')
-              if (!track) return
-              const rect = track.getBoundingClientRect()
-              const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-              seekTo(fraction * totalDuration)
-            }}
-          >
-            <div
-              data-track=""
-              className="h-[3px] group-hover/bar:h-[5px] rounded-full bg-[var(--bg-overlay)] relative transition-all duration-150"
+        {/* ── Video loading spinner ─────────────────────────────────────── */}
+        <AnimatePresence>
+          {isVideoLoading && isPlaying && (
+            <motion.div
+              key="loading"
+              className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
             >
-              {/* Loop region band */}
-              {loopInFrac !== null && loopOutFrac !== null && loopOutFrac > loopInFrac && (
-                <div
-                  className="absolute top-0 h-full rounded-full pointer-events-none"
-                  style={{
-                    left: `${loopInFrac * 100}%`,
-                    width: `${(loopOutFrac - loopInFrac) * 100}%`,
-                    backgroundColor: loopEnabled ? 'rgba(168,85,247,0.5)' : 'rgba(168,85,247,0.25)'
-                  }}
-                />
-              )}
+              <Loader2 size={28} className="text-white/60 animate-spin drop-shadow-lg" />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ── Speed / shuttle badge ─────────────────────────────────────── */}
+        <AnimatePresence>
+          {shuttleLabel && (
+            <motion.div
+              key="speed-badge"
+              className="absolute top-2 right-2 z-20 px-1.5 py-0.5 rounded bg-black/70 text-[10px] font-mono font-semibold text-[var(--accent-bright)] pointer-events-none"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.12 }}
+            >
+              {shuttleLabel}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ── Controls overlay ─────────────────────────────────────────── */}
+        <AnimatePresence>
+          {(showControls || !isPlaying) && (
+            <motion.div
+              key="controls"
+              className="absolute inset-x-0 bottom-0 flex flex-col"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18, ease: 'easeInOut' }}
+            >
+              {/* Progress / scrub bar */}
               <div
-                className="h-full bg-[var(--accent)] rounded-full"
-                style={{ width: `${progressFraction * 100}%` }}
-              />
-              <div
-                className="absolute top-1/2 w-3 h-3 rounded-full bg-white shadow opacity-0 group-hover/bar:opacity-100 transition-opacity duration-150 pointer-events-none -translate-x-1/2 -translate-y-1/2"
-                style={{ left: `${progressFraction * 100}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Transport row */}
-          <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-t from-black/80 to-transparent">
-            <span className="text-[11px] font-mono text-[var(--text-secondary)] w-[72px]">
-              {formatTimecode(playheadTime)}
-            </span>
-
-            <div className="flex-1 flex items-center justify-center gap-1">
-              <TransportBtn
-                label="Step back  ←"
-                onClick={() => seekTo(Math.max(0, playheadTime - 1 / 30))}
+                className="relative px-3 pb-1 pt-2 cursor-pointer group/bar"
+                onClick={(e) => {
+                  if (totalDuration <= 0) return
+                  const rect = scrubBarRef.current?.getBoundingClientRect()
+                  if (!rect) return
+                  const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+                  seekTo(fraction * totalDuration)
+                }}
+                onMouseMove={(e) => {
+                  if (totalDuration <= 0) return
+                  const rect = scrubBarRef.current?.getBoundingClientRect()
+                  if (!rect) return
+                  const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+                  setScrubHover({ frac: fraction, clientX: e.clientX })
+                }}
+                onMouseLeave={() => {
+                  setScrubHover(null)
+                  setThumbUrl(null)
+                }}
               >
-                <StepBackIcon />
-              </TransportBtn>
-
-              <motion.button
-                tabIndex={-1}
-                whileTap={{ scale: 0.9 }}
-                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                onClick={() => setIsPlaying(!isPlaying)}
-                title="Play / Pause  Space"
-                className="flex items-center justify-center w-8 h-8 rounded-full bg-[var(--accent)] text-white hover:bg-[var(--accent-light)] transition-colors duration-100"
-              >
-                <AnimatePresence mode="wait" initial={false}>
-                  {isPlaying ? (
-                    <motion.span
-                      key="pause"
-                      initial={{ scale: 0.7, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      exit={{ scale: 0.7, opacity: 0 }}
-                      transition={{ duration: 0.1 }}
-                    >
-                      <Pause size={14} />
-                    </motion.span>
-                  ) : (
-                    <motion.span
-                      key="play"
-                      initial={{ scale: 0.7, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      exit={{ scale: 0.7, opacity: 0 }}
-                      transition={{ duration: 0.1 }}
-                    >
-                      <Play size={14} className="ml-0.5" />
-                    </motion.span>
-                  )}
+                {/* Hover thumbnail */}
+                <AnimatePresence>
+                  {scrubHover && totalDuration > 0 && (() => {
+                    const rect = scrubBarRef.current?.getBoundingClientRect()
+                    const panelRect = panelRef.current?.getBoundingClientRect()
+                    if (!rect || !panelRect) return null
+                    const rawLeft = scrubHover.clientX - panelRect.left
+                    // Clamp so thumbnail stays within panel
+                    const clampedLeft = Math.max(80, Math.min(rawLeft, panelRect.width - 80))
+                    return (
+                      <motion.div
+                        key="thumb"
+                        className="absolute bottom-full mb-2 pointer-events-none z-50 flex flex-col items-center gap-1"
+                        style={{ left: clampedLeft, transform: 'translateX(-50%)' }}
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 4 }}
+                        transition={{ duration: 0.1 }}
+                      >
+                        <div className="w-40 h-[90px] rounded overflow-hidden border border-white/15 shadow-xl bg-black flex items-center justify-center shrink-0">
+                          {thumbUrl ? (
+                            <img src={thumbUrl} className="w-full h-full object-cover" alt="" />
+                          ) : (
+                            <Loader2 size={12} className="animate-spin text-white/30" />
+                          )}
+                        </div>
+                        <span className="text-[10px] font-mono text-white/60 bg-black/60 px-1.5 py-0.5 rounded">
+                          {formatTimecode(scrubHover.frac * totalDuration)}
+                        </span>
+                      </motion.div>
+                    )
+                  })()}
                 </AnimatePresence>
-              </motion.button>
 
-              <TransportBtn
-                label="Step forward  →"
-                onClick={() => seekTo(playheadTime + 1 / 30)}
-              >
-                <StepForwardIcon />
-              </TransportBtn>
-            </div>
-
-            <div className="flex items-center justify-end gap-1.5" style={{ width: 110 }}>
-              {/* Loop toggle */}
-              <Tooltip content={loopEnabled ? 'Loop on  Ctrl+L' : 'Loop off  Ctrl+L'}>
-                <button
-                  onClick={toggleLoop}
-                  className={cn(
-                    'flex items-center justify-center w-6 h-6 rounded transition-colors duration-100',
-                    loopEnabled
-                      ? 'text-purple-400 bg-purple-500/20'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/10'
+                <div
+                  ref={scrubBarRef}
+                  data-track=""
+                  className="h-[3px] group-hover/bar:h-[5px] rounded-full bg-[var(--bg-overlay)] relative transition-all duration-150"
+                >
+                  {/* Loop region band */}
+                  {loopInFrac !== null && loopOutFrac !== null && loopOutFrac > loopInFrac && (
+                    <div
+                      className="absolute top-0 h-full rounded-full pointer-events-none"
+                      style={{
+                        left: `${loopInFrac * 100}%`,
+                        width: `${(loopOutFrac - loopInFrac) * 100}%`,
+                        backgroundColor: loopEnabled ? 'rgba(168,85,247,0.5)' : 'rgba(168,85,247,0.25)'
+                      }}
+                    />
                   )}
-                >
-                  <Repeat size={11} />
-                </button>
-              </Tooltip>
+                  <div
+                    className="h-full bg-[var(--accent)] rounded-full"
+                    style={{ width: `${progressFraction * 100}%` }}
+                  />
+                  {/* Hover position indicator */}
+                  {scrubHover && (
+                    <div
+                      className="absolute top-1/2 w-1 h-[140%] bg-white/40 rounded-full pointer-events-none -translate-x-1/2 -translate-y-1/2"
+                      style={{ left: `${scrubHover.frac * 100}%` }}
+                    />
+                  )}
+                  <div
+                    className="absolute top-1/2 w-3 h-3 rounded-full bg-white shadow opacity-0 group-hover/bar:opacity-100 transition-opacity duration-150 pointer-events-none -translate-x-1/2 -translate-y-1/2"
+                    style={{ left: `${progressFraction * 100}%` }}
+                  />
+                </div>
+              </div>
 
-              {/* Quick Render Preview */}
-              <Tooltip content="Quick Render Preview — low-res FFmpeg draft for seamless playback">
-                <button
-                  onClick={handleQuickPreview}
-                  disabled={isEmpty || qpState === 'rendering'}
-                  className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-muted)] hover:text-yellow-400 hover:bg-white/10 transition-colors duration-100 disabled:opacity-30 disabled:pointer-events-none"
-                >
-                  <Zap size={11} />
-                </button>
-              </Tooltip>
+              {/* Transport row */}
+              <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-t from-black/80 to-transparent">
+                {/* Timecode — current / total */}
+                <div className="flex items-center gap-1 w-[140px] shrink-0">
+                  <span className="text-[11px] font-mono text-[var(--text-secondary)]">
+                    {formatTimecode(playheadTime)}
+                  </span>
+                  {totalDuration > 0 && (
+                    <>
+                      <span className="text-[10px] text-[var(--text-muted)]">/</span>
+                      <span className="text-[10px] font-mono text-[var(--text-muted)]">
+                        {formatTimecode(totalDuration)}
+                      </span>
+                    </>
+                  )}
+                </div>
 
-              <Tooltip content="Volume (coming soon)">
-                <button className="text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors">
-                  <Volume2 size={13} />
-                </button>
-              </Tooltip>
-              <Tooltip content="Fullscreen  F">
-                <button
-                  className="text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
-                  onClick={() => videoRef.current?.requestFullscreen?.()}
-                >
-                  <Maximize2 size={13} />
-                </button>
-              </Tooltip>
-            </div>
-          </div>
-        </div>
+                <div className="flex-1 flex items-center justify-center gap-1">
+                  <TransportBtn
+                    label="Step back  ←"
+                    onClick={() => seekTo(Math.max(0, playheadTime - 1 / 30))}
+                  >
+                    <StepBackIcon />
+                  </TransportBtn>
+
+                  <motion.button
+                    tabIndex={-1}
+                    whileTap={{ scale: 0.9 }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                    onClick={() => {
+                      if (shuttleSpeed !== 0) { setShuttleSpeed(0); setIsPlaying(false) }
+                      else { setIsPlaying(!isPlaying) }
+                    }}
+                    title="Play / Pause  Space"
+                    className="flex items-center justify-center w-8 h-8 rounded-full bg-[var(--accent)] text-white hover:bg-[var(--accent-light)] transition-colors duration-100"
+                  >
+                    <AnimatePresence mode="wait" initial={false}>
+                      {isPlaying ? (
+                        <motion.span
+                          key="pause"
+                          initial={{ scale: 0.7, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          exit={{ scale: 0.7, opacity: 0 }}
+                          transition={{ duration: 0.1 }}
+                        >
+                          <Pause size={14} />
+                        </motion.span>
+                      ) : (
+                        <motion.span
+                          key="play"
+                          initial={{ scale: 0.7, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          exit={{ scale: 0.7, opacity: 0 }}
+                          transition={{ duration: 0.1 }}
+                        >
+                          <Play size={14} className="ml-0.5" />
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                  </motion.button>
+
+                  <TransportBtn
+                    label="Step forward  →"
+                    onClick={() => seekTo(playheadTime + 1 / 30)}
+                  >
+                    <StepForwardIcon />
+                  </TransportBtn>
+                </div>
+
+                <div className="flex items-center justify-end gap-1.5 w-[140px] shrink-0">
+                  {/* Preview speed picker */}
+                  <div className="relative" ref={speedMenuRef}>
+                    <Tooltip content="Playback speed">
+                      <button
+                        onClick={() => setShowSpeedMenu((v) => !v)}
+                        className={cn(
+                          'flex items-center gap-0.5 h-6 px-1.5 rounded text-[10px] font-mono font-semibold transition-colors duration-100',
+                          previewSpeed !== 1
+                            ? 'text-[var(--accent-bright)] bg-[var(--accent-dim)]/30'
+                            : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/10'
+                        )}
+                      >
+                        {previewSpeed}x
+                        <ChevronUp size={9} className={cn('transition-transform duration-150', showSpeedMenu ? 'rotate-180' : '')} />
+                      </button>
+                    </Tooltip>
+
+                    <AnimatePresence>
+                      {showSpeedMenu && (
+                        <motion.div
+                          key="speed-menu"
+                          className="absolute bottom-full mb-1 right-0 bg-[var(--bg-elevated)] border border-[var(--border)] rounded shadow-lg overflow-hidden z-50"
+                          initial={{ opacity: 0, y: 4, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 4, scale: 0.95 }}
+                          transition={{ duration: 0.12 }}
+                        >
+                          {PREVIEW_SPEEDS.map((s) => (
+                            <button
+                              key={s}
+                              onClick={() => { setPreviewSpeed(s); setShowSpeedMenu(false) }}
+                              className={cn(
+                                'block w-full text-left px-3 py-1 text-[11px] font-mono transition-colors duration-75',
+                                s === previewSpeed
+                                  ? 'text-[var(--accent-bright)] bg-[var(--accent-dim)]/20'
+                                  : 'text-[var(--text-secondary)] hover:bg-white/10'
+                              )}
+                            >
+                              {s}x
+                            </button>
+                          ))}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  {/* Loop toggle */}
+                  <Tooltip content={loopEnabled ? 'Loop on  Ctrl+L' : 'Loop off  Ctrl+L'}>
+                    <button
+                      onClick={toggleLoop}
+                      className={cn(
+                        'flex items-center justify-center w-6 h-6 rounded transition-colors duration-100',
+                        loopEnabled
+                          ? 'text-purple-400 bg-purple-500/20'
+                          : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-white/10'
+                      )}
+                    >
+                      <Repeat size={11} />
+                    </button>
+                  </Tooltip>
+
+                  {/* Quick Render Preview */}
+                  <Tooltip content="Quick Render Preview — low-res FFmpeg draft for seamless playback">
+                    <button
+                      onClick={handleQuickPreview}
+                      disabled={isEmpty || qpState === 'rendering'}
+                      className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-muted)] hover:text-yellow-400 hover:bg-white/10 transition-colors duration-100 disabled:opacity-30 disabled:pointer-events-none"
+                    >
+                      <Zap size={11} />
+                    </button>
+                  </Tooltip>
+
+                  <Tooltip content="Volume (coming soon)">
+                    <button className="text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors">
+                      <Volume2 size={13} />
+                    </button>
+                  </Tooltip>
+
+                  <Tooltip content="Fullscreen  F">
+                    <button
+                      className="text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+                      onClick={() => {
+                        if (document.fullscreenElement) {
+                          document.exitFullscreen().catch(() => {})
+                        } else {
+                          panelRef.current?.requestFullscreen?.().catch(() => {})
+                        }
+                      }}
+                    >
+                      <Maximize2 size={13} />
+                    </button>
+                  </Tooltip>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   )

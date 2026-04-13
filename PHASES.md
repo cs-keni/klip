@@ -220,34 +220,34 @@ Aesthetic: dark, modern, fluid — closer to Figma/Linear than Blender.
 
 ---
 
-## Phase 4 — Preview Player
+## Phase 4 — Preview Player ✅ COMPLETE
 
 > Goal: See exactly what the final video will look like at any point during editing.
 
-- [ ] Video preview panel (top-right area of layout)
-- [ ] Play / pause (Space bar)
-- [ ] Scrub bar synced with timeline playhead
-- [ ] Frame step forward / backward (arrow keys when focused)
-- [ ] J / K / L keyboard scrubbing (reverse / pause / forward, industry standard)
-- [ ] Current timecode display (HH:MM:SS:FF)
-- [ ] Total duration display
-- [ ] Fullscreen preview mode (F key or button)
-- [ ] Preview resolution toggle (Full / Half / Quarter — for performance)
-- [ ] Playback speed control (0.5x / 1x / 1.5x / 2x) — for review purposes
-- [ ] Loop playback selection — set in/out range on timeline (I/O keys) and toggle loop (Ctrl+L)
-- [ ] Seamless clip-to-clip playback using proxy files
-  - [ ] When playhead crosses a clip boundary, continue into the next clip without pause
-- [ ] "Quick Render Preview" button — runs a fast FFmpeg draft export to temp file for true seamless preview
-  - [ ] Low quality (720p, low bitrate) but fast to generate relative to full export
-  - [ ] Opens in the built-in player automatically
+- [x] Video preview panel (top-right area of layout)
+- [x] Play / pause (Space bar)
+- [x] Scrub bar synced with timeline playhead
+- [x] Frame step forward / backward (arrow keys when focused)
+- [x] J / K / L keyboard scrubbing (reverse / pause / forward, industry standard)
+- [x] Current timecode display (HH:MM:SS:FF)
+- [x] Total duration display
+- [x] Fullscreen preview mode (F key or button)
+- [ ] Preview resolution toggle (Full / Half / Quarter — for performance) — deferred; requires proxy file generation (Phase 2b)
+- [x] Playback speed control (0.25x / 0.5x / 0.75x / 1x / 1.5x / 2x) — for review purposes
+- [x] Loop playback selection — set in/out range on timeline (I/O keys) and toggle loop (Ctrl+L)
+- [x] Seamless clip-to-clip playback
+  - [x] When playhead crosses a clip boundary, continue into the next clip without pause
+- [x] "Quick Render Preview" button — runs a fast FFmpeg draft export to temp file for true seamless preview
+  - [x] Low quality (720p, low bitrate) but fast to generate relative to full export
+  - [x] Opens in the built-in player automatically
 
 **QoL / UX:**
-- [ ] Smooth playhead scrubbing with frame thumbnail shown on hover
-- [ ] Player controls fade out when not hovering (cinema-style), fade back in on mouse move
-- [ ] Play icon pulses briefly on play, shrinks briefly on pause (subtle feedback)
-- [ ] Loading spinner when switching clips during heavy proxy generation
-- [ ] Playback speed indicator visible in player corner when not at 1x
-- [ ] Fullscreen transition is animated (smooth scale-up, not a jump)
+- [x] Smooth playhead scrubbing with frame thumbnail shown on hover
+- [x] Player controls fade out when not hovering (cinema-style), fade back in on mouse move
+- [x] Play icon pulses briefly on play, shrinks briefly on pause (subtle feedback)
+- [x] Loading spinner when switching clips during heavy proxy generation
+- [x] Playback speed indicator visible in player corner when not at 1x
+- [ ] Fullscreen transition is animated (smooth scale-up, not a jump) — limited by native fullscreen API; acceptable as-is
 
 ---
 

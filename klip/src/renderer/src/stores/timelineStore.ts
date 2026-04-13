@@ -35,6 +35,13 @@ interface TimelineState {
   playheadTime: number
   pxPerSec: number
 
+  /**
+   * J/K/L shuttle speed. Negative = reverse, positive = forward.
+   * Valid values: -4 | -2 | -1 | 0 | 1 | 2 | 4
+   * 0 means no active shuttle (normal play/pause governs isPlaying).
+   */
+  shuttleSpeed: number
+
   // ── Loop ──────────────────────────────────────────────────────────────────
   loopIn: number | null
   loopOut: number | null
@@ -62,6 +69,7 @@ interface TimelineState {
 
   // ── Playback ──────────────────────────────────────────────────────────────
   setIsPlaying: (v: boolean) => void
+  setShuttleSpeed: (speed: number) => void
 
   // ── Loop ──────────────────────────────────────────────────────────────────
   setLoopIn: (t: number | null) => void
@@ -118,6 +126,7 @@ export const useTimelineStore = create<TimelineState>((set) => ({
   playheadTime:   0,
   pxPerSec:       80,
   isPlaying:      false,
+  shuttleSpeed:   0,
   loopIn:         null,
   loopOut:        null,
   loopEnabled:    false,
@@ -125,6 +134,7 @@ export const useTimelineStore = create<TimelineState>((set) => ({
   future:         [],
 
   setIsPlaying: (v) => set({ isPlaying: v }),
+  setShuttleSpeed: (speed) => set({ shuttleSpeed: speed }),
 
   // ── Loop ────────────────────────────────────────────────────────────────
 

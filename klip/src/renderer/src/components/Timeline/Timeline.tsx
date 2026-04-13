@@ -19,6 +19,7 @@ export default function Timeline(): JSX.Element {
     playheadTime, pxPerSec,
     selectedClipId, selectedClipIds,
     isPlaying, setIsPlaying,
+    shuttleSpeed, setShuttleSpeed,
     snapEnabled, toggleSnap,
     loopIn, loopOut, loopEnabled,
     setLoopIn, setLoopOut, toggleLoop, clearLoop,
@@ -102,18 +103,32 @@ export default function Timeline(): JSX.Element {
       // ── Transport ──────────────────────────────────────────────────────
       if (e.key === ' ') {
         e.preventDefault()
-        setIsPlaying(!isPlaying)
+        // Space always cancels shuttle and toggles normal play/pause
+        if (shuttleSpeed !== 0) { setShuttleSpeed(0); setIsPlaying(false) }
+        else { setIsPlaying(!isPlaying) }
         return
       }
-      // L = play, K = pause, J = seek back 10s
+      // J/K/L shuttle — escalating speed machine
+      // L: forward 1x → 2x → 4x; J: reverse 1x → 2x → 4x; K: stop
       if (e.key === 'l' && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault(); if (!isPlaying) setIsPlaying(true); return
+        e.preventDefault()
+        const next = shuttleSpeed <= 0 ? 1 : shuttleSpeed === 1 ? 2 : shuttleSpeed === 2 ? 4 : 4
+        setShuttleSpeed(next)
+        setIsPlaying(true)
+        return
       }
       if (e.key === 'k' && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault(); setIsPlaying(false); return
+        e.preventDefault()
+        setShuttleSpeed(0)
+        setIsPlaying(false)
+        return
       }
       if (e.key === 'j' && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault(); setIsPlaying(false); setPlayheadTime(Math.max(0, playheadTime - 10)); return
+        e.preventDefault()
+        const next = shuttleSpeed >= 0 ? -1 : shuttleSpeed === -1 ? -2 : shuttleSpeed === -2 ? -4 : -4
+        setShuttleSpeed(next)
+        setIsPlaying(true)
+        return
       }
 
       // ── Frame step ─────────────────────────────────────────────────────
@@ -195,6 +210,7 @@ export default function Timeline(): JSX.Element {
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [
     isPlaying, setIsPlaying,
+    shuttleSpeed, setShuttleSpeed,
     playheadTime, setPlayheadTime,
     zoomToFit, undo, redo,
     selectedClipId, selectedClipIds,
