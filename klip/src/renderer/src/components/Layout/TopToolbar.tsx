@@ -2,13 +2,18 @@ import { type ReactNode } from 'react'
 import { MousePointer2, Scissors, Undo2, Redo2, ZoomOut, ZoomIn, Save, Settings, HelpCircle, Play, Type } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip } from '@/components/ui/tooltip'
+import { saveProject } from '@/lib/projectIO'
+import { useTimelineStore } from '@/stores/timelineStore'
 
 interface TopToolbarProps {
   onExportClick: () => void
   onAddTextClip: () => void
+  onSettingsClick: () => void
 }
 
-export default function TopToolbar({ onExportClick, onAddTextClip }: TopToolbarProps): JSX.Element {
+export default function TopToolbar({ onExportClick, onAddTextClip, onSettingsClick }: TopToolbarProps): JSX.Element {
+  const { undo, redo } = useTimelineStore()
+
   return (
     <div className="flex items-center h-[42px] px-3 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)] gap-1 shrink-0">
 
@@ -33,8 +38,8 @@ export default function TopToolbar({ onExportClick, onAddTextClip }: TopToolbarP
 
       {/* History */}
       <ToolGroup>
-        <ToolBtn icon={<Undo2 size={14} />} label="Undo  Ctrl+Z" />
-        <ToolBtn icon={<Redo2 size={14} />} label="Redo  Ctrl+Shift+Z" />
+        <ToolBtn icon={<Undo2 size={14} />} label="Undo  Ctrl+Z" onClick={undo} />
+        <ToolBtn icon={<Redo2 size={14} />} label="Redo  Ctrl+Shift+Z" onClick={redo} />
       </ToolGroup>
 
       <ToolDivider />
@@ -63,8 +68,8 @@ export default function TopToolbar({ onExportClick, onAddTextClip }: TopToolbarP
 
       {/* Utility */}
       <ToolGroup>
-        <ToolBtn icon={<Save size={14} />} label="Save  Ctrl+S" />
-        <ToolBtn icon={<Settings size={14} />} label="Settings" />
+        <ToolBtn icon={<Save size={14} />} label="Save  Ctrl+S" onClick={saveProject} />
+        <ToolBtn icon={<Settings size={14} />} label="Settings" onClick={onSettingsClick} />
         <ToolBtn icon={<HelpCircle size={14} />} label="Help  Shift+?" />
       </ToolGroup>
     </div>

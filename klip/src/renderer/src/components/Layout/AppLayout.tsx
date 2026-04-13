@@ -8,6 +8,7 @@ import TimelinePanel from './TimelinePanel'
 import TopToolbar from './TopToolbar'
 import ResizeHandle from './ResizeHandle'
 import ExportDialog from '@/components/Export/ExportDialog'
+import SettingsDialog from '@/components/Settings/SettingsDialog'
 import SourceClipViewer from '@/components/MediaBin/SourceClipViewer'
 import type { TimelineClip, TextSettings } from '@/types/timeline'
 
@@ -35,6 +36,7 @@ export default function AppLayout(): JSX.Element {
   const [sidebarWidth, setSidebarWidth]     = useState(SIDEBAR_DEFAULT)
   const [timelineHeight, setTimelineHeight] = useState(TIMELINE_DEFAULT)
   const [showExport, setShowExport]         = useState(false)
+  const [showSettings, setShowSettings]     = useState(false)
   const { checkMissingFiles } = useMediaStore()
 
   const { tracks, playheadTime, addClip } = useTimelineStore()
@@ -75,10 +77,15 @@ export default function AppLayout(): JSX.Element {
       <TopToolbar
         onExportClick={() => setShowExport(true)}
         onAddTextClip={handleAddTextClip}
+        onSettingsClick={() => setShowSettings(true)}
       />
 
       <AnimatePresence>
         {showExport && <ExportDialog onClose={() => setShowExport(false)} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
       </AnimatePresence>
 
       <SourceClipViewer />

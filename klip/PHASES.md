@@ -106,7 +106,7 @@
 
 ## Phase 8 — Polish & Settings
 - [ ] Tutorial / onboarding overlay
-- [ ] Settings panel: output resolution, frame rate, proxy storage
-- [ ] Keyboard shortcut reference panel
+- [x] Settings panel: Project tab (resolution/fps/aspect ratio), Export tab (default output folder), Shortcuts tab (keyboard reference)
+- [x] Keyboard shortcut reference panel (inside Settings → Shortcuts tab)
 - [x] Auto-save project (every 2 min to project file when path exists; Ctrl+S / Ctrl+Shift+S to save/save-as)
 - [x] Recent projects list (stored in userData/recent-projects.json; shown on welcome screen with relative timestamps)
