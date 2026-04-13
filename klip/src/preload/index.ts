@@ -51,7 +51,19 @@ const api = {
 
     /** Open a project from a given path, or show an Open dialog. Returns { data, path } or null. */
     open: (filePath?: string): Promise<{ data: unknown; path: string } | null> =>
-      ipcRenderer.invoke('project:open', filePath)
+      ipcRenderer.invoke('project:open', filePath),
+
+    /** Write project data to the autosave temp file (crash recovery). */
+    autosave: (data: unknown): Promise<void> =>
+      ipcRenderer.invoke('project:autosave', data),
+
+    /** Check if an autosave temp file exists. Returns { data } or null. */
+    checkAutosave: (): Promise<{ data: unknown } | null> =>
+      ipcRenderer.invoke('project:check-autosave'),
+
+    /** Delete the autosave temp file after a successful manual save. */
+    clearAutosave: (): Promise<void> =>
+      ipcRenderer.invoke('project:clear-autosave')
   },
 
   export: {

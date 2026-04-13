@@ -1,8 +1,9 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
-import { Minus, Plus, Maximize2, Undo2, Redo2, Magnet, Repeat } from 'lucide-react'
+import { Minus, Plus, Maximize2, Undo2, Redo2, Magnet, Repeat, Timer } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatTimecode } from '@/lib/mediaUtils'
 import { useTimelineStore } from '@/stores/timelineStore'
+import { toast } from '@/stores/toastStore'
 import { HEADER_WIDTH, TRACK_HEIGHT } from '@/types/timeline'
 import TimelineRuler from './TimelineRuler'
 import TrackRow from './TrackRow'
@@ -31,12 +32,14 @@ export default function Timeline(): JSX.Element {
     rippleDelete, rippleDeleteSelected,
     copySelectedClips, pasteClips,
     trimToPlayhead,
-    undo, redo
+    undo, redo,
+    markers, addMarker, removeMarker, updateMarkerLabel
   } = useTimelineStore()
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const [scrollLeft, setScrollLeft] = useState(0)
   const [isScrubbing, setIsScrubbing] = useState(false)
+  const [rulerFormat, setRulerFormat] = useState<'seconds' | 'timecode'>('seconds')
 
   // ── Derived dimensions ────────────────────────────────────────────────────
 
@@ -149,7 +152,13 @@ export default function Timeline(): JSX.Element {
 
       // ── Copy / paste ───────────────────────────────────────────────────
       if ((e.ctrlKey || e.metaKey) && e.key === 'c' && !e.shiftKey) {
-        e.preventDefault(); copySelectedClips(); return
+        e.preventDefault()
+        copySelectedClips()
+        const { selectedClipIds } = useTimelineStore.getState()
+        if (selectedClipIds.length > 0) {
+          toast(selectedClipIds.length === 1 ? 'Clip copied' : `${selectedClipIds.length} clips copied`, 'info', 1800)
+        }
+        return
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'v' && !e.shiftKey) {
         e.preventDefault(); pasteClips(); return
@@ -188,6 +197,33 @@ export default function Timeline(): JSX.Element {
         e.preventDefault(); splitClip(selectedClipId); return
       }
 
+      // Marker — drop a pin at the playhead
+      if (e.key === 'm' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault()
+        addMarker(playheadTime)
+        toast(`Marker at ${formatTimecode(playheadTime).slice(3, 8)}`, 'info', 1800)
+        return
+      }
+
+      // Go to next / previous edit point (clip boundary)
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        e.preventDefault()
+        const { clips: currentClips, playheadTime: ph } = useTimelineStore.getState()
+        const boundaries = [...new Set([
+          0,
+          ...currentClips.map((c) => c.startTime),
+          ...currentClips.map((c) => c.startTime + c.duration)
+        ])].sort((a, b) => a - b)
+        if (e.key === 'ArrowDown') {
+          const next = boundaries.find((b) => b > ph + 0.01)
+          if (next !== undefined) setPlayheadTime(next)
+        } else {
+          const prev = [...boundaries].reverse().find((b) => b < ph - 0.01)
+          if (prev !== undefined) setPlayheadTime(prev)
+        }
+        return
+      }
+
       // ── Loop in/out/toggle ─────────────────────────────────────────────
       if (e.key === 'i' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault(); setLoopIn(playheadTime); return
@@ -219,7 +255,8 @@ export default function Timeline(): JSX.Element {
     copySelectedClips, pasteClips,
     trimToPlayhead, toggleSnap,
     loopIn, loopOut, loopEnabled,
-    setLoopIn, setLoopOut, toggleLoop, clearLoop
+    setLoopIn, setLoopOut, toggleLoop, clearLoop,
+    addMarker
   ])
 
   // ── Deselect when clicking empty space ───────────────────────────────────
@@ -280,6 +317,16 @@ export default function Timeline(): JSX.Element {
 
         <div className="flex-1" />
 
+        {/* Ruler format toggle */}
+        <ToolbarButton
+          icon={<Timer size={11} />}
+          title={rulerFormat === 'seconds' ? 'Switch to timecode (HH:MM:SS:FF)' : 'Switch to seconds'}
+          onClick={() => setRulerFormat((f) => f === 'seconds' ? 'timecode' : 'seconds')}
+          active={rulerFormat === 'timecode'}
+        />
+
+        <div className="w-px h-4 bg-[var(--border-subtle)] mx-1" />
+
         <span className="text-[10px] font-mono text-[var(--text-muted)] select-none">
           {formatTimecode(playheadTime)}
         </span>
@@ -310,6 +357,10 @@ export default function Timeline(): JSX.Element {
               onScrub={setPlayheadTime}
               onScrubStart={() => { setIsPlaying(false); setIsScrubbing(true) }}
               onScrubEnd={() => setIsScrubbing(false)}
+              markers={markers}
+              onRemoveMarker={removeMarker}
+              onUpdateMarkerLabel={updateMarkerLabel}
+              format={rulerFormat}
             />
           </div>
 

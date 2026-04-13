@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useProjectStore } from '@/stores/projectStore'
 import { useTimelineStore } from '@/stores/timelineStore'
 import { useMediaStore } from '@/stores/mediaStore'
-import { saveProject, saveProjectAs } from '@/lib/projectIO'
+import { saveProject, saveProjectAs, serializeProject } from '@/lib/projectIO'
 
 const AUTOSAVE_INTERVAL_MS = 2 * 60 * 1000 // 2 minutes
 
@@ -71,11 +71,12 @@ export function useProjectIO(): void {
   // ── Auto-save interval ───────────────────────────────────────────────────
   useEffect(() => {
     const id = setInterval(() => {
-      const { hasUnsavedChanges, projectPath } = useProjectStore.getState()
-      // Only auto-save if project has been saved at least once (has a path)
-      // and there are pending changes.
-      if (hasUnsavedChanges && projectPath) {
-        saveProject()
+      const { hasUnsavedChanges, projectName } = useProjectStore.getState()
+      // Write to autosave temp file whenever there are unsaved changes in an active project.
+      // This covers both unsaved new projects and modified existing projects.
+      if (hasUnsavedChanges && projectName) {
+        const data = serializeProject()
+        void window.api.project.autosave(data)
       }
     }, AUTOSAVE_INTERVAL_MS)
     return () => clearInterval(id)

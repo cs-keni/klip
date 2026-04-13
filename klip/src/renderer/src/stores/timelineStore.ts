@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type {
   Track, TimelineClip, HistoryEntry, Transition,
-  TextSettings, ColorSettings, CropSettings
+  TextSettings, ColorSettings, CropSettings, TimelineMarker
 } from '@/types/timeline'
 
 type TrimPatch = Partial<Pick<TimelineClip, 'startTime' | 'trimStart' | 'duration'>>
@@ -110,6 +110,12 @@ interface TimelineState {
   addTransition:    (t: Transition) => void
   removeTransition: (id: string) => void
 
+  // ── Markers ───────────────────────────────────────────────────────────────
+  markers: TimelineMarker[]
+  addMarker:         (time: number) => void
+  removeMarker:      (id: string) => void
+  updateMarkerLabel: (id: string, label: string) => void
+
   // ── History ───────────────────────────────────────────────────────────────
   undo: () => void
   redo: () => void
@@ -128,6 +134,7 @@ export const useTimelineStore = create<TimelineState>((set) => ({
   tracks:         DEFAULT_TRACKS,
   clips:          [],
   transitions:    [],
+  markers:        [],
   selectedClipId:  null,
   selectedClipIds: [],
   clipboard:       null,
@@ -640,6 +647,26 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       past: [...s.past.slice(-49), snapshot(s)],
       future: [],
       transitions: s.transitions.filter((t) => t.id !== id)
+    })),
+
+  // ── Markers ──────────────────────────────────────────────────────────────
+
+  addMarker: (time) =>
+    set((s) => ({
+      markers: [...s.markers, {
+        id: crypto.randomUUID(),
+        time,
+        label: '',
+        color: '#f59e0b'
+      }].sort((a, b) => a.time - b.time)
+    })),
+
+  removeMarker: (id) =>
+    set((s) => ({ markers: s.markers.filter((m) => m.id !== id) })),
+
+  updateMarkerLabel: (id, label) =>
+    set((s) => ({
+      markers: s.markers.map((m) => m.id === id ? { ...m, label } : m)
     })),
 
   // ── History ──────────────────────────────────────────────────────────────

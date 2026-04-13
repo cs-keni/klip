@@ -106,3 +106,10 @@ export interface HistoryEntry {
   clips: TimelineClip[]
   transitions: Transition[]
 }
+
+export interface TimelineMarker {
+  id: string
+  time: number    // seconds
+  label: string
+  color: string   // hex, e.g. '#f59e0b'
+}

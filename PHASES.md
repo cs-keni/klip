@@ -396,42 +396,42 @@ Aesthetic: dark, modern, fluid — closer to Figma/Linear than Blender.
 - [ ] Tutorial settings: option to replay the tutorial or reset onboarding state
 
 **General QoL:**
-- [ ] Auto-save every 2 minutes to a `.autosave` project file
-- [ ] Crash recovery — on startup, detect unsaved autosave and offer to restore
-- [ ] "Unsaved changes" indicator in titlebar (dot next to project name, like VS Code)
-- [ ] Ctrl+S to save, Ctrl+Shift+S to save as
-- [ ] Project name shown in titlebar
-- [ ] Recent projects on welcome screen (last 5, with thumbnail)
+- [x] Auto-save every 2 minutes to a `.autosave` project file (`klip-autosave.klip` in userData)
+- [x] Crash recovery — on startup, detect unsaved autosave and offer to restore
+- [x] "Unsaved changes" indicator in titlebar (dot next to project name, like VS Code)
+- [x] Ctrl+S to save, Ctrl+Shift+S to save as
+- [x] Project name shown in titlebar
+- [x] Recent projects on welcome screen (last 5, with thumbnail)
 - [ ] Context menus throughout (right-click on everything that should have one)
-- [ ] Tooltip system — hover any button for 300ms to see a label + keyboard shortcut
+- [x] Tooltip system — hover any button for 300ms to see a label + keyboard shortcut (already built in Phase 6)
 - [ ] Global search / command palette (Ctrl+K) — search clips, effects, settings, actions
-- [ ] Clip markers — drop a pin on the timeline with a label (M key)
-- [ ] Timeline ruler format toggle (seconds vs HH:MM:SS:FF timecode)
-- [ ] Go to next / previous edit — jump playhead to the next/previous clip boundary (Up/Down arrow)
+- [x] Clip markers — drop a pin on the timeline with a label (M key; double-click to rename, right-click to delete)
+- [x] Timeline ruler format toggle — Timer icon in timeline toolbar switches between seconds and HH:MM:SS:FF timecode
+- [x] Go to next / previous edit — jump playhead to the next/previous clip boundary (↓/↑ arrow keys)
 
 **Performance:**
-- [ ] Waveform cache on disk — don't recompute on every project open
+- [x] Waveform cache on disk — don't recompute on every project open (done in Phase 5b)
 - [ ] Proxy file cache management — settings to clear old proxies, see disk usage
 
 **Animations & Feel:**
 Every interaction should feel responsive and alive — not flashy, just smooth and deliberate.
-- [ ] Consistent easing: ease-out for elements entering the screen, ease-in for exits, spring physics for drags
-- [ ] Button press: scale down slightly (0.96) on mousedown, spring back on release
-- [ ] Panel open/close: slide in/out with a fast ease-out (150–200ms) — never instant, never slow
-- [ ] Sidebar tab switch: content cross-fades (not a hard swap)
+- [x] Consistent easing: ease-out for elements entering the screen, ease-in for exits, spring physics for drags (established across components)
+- [x] Button press: scale down slightly (0.96) on mousedown, spring back on release (`active:scale-[0.96]` on toolbar buttons)
+- [x] Panel open/close: slide in/out with a fast ease-out (150–200ms) (Framer Motion across all panels)
+- [x] Sidebar tab switch: content cross-fades (AnimatePresence mode="wait" in Sidebar)
 - [ ] Clip drag: ghost/shadow follows cursor; original clip dims slightly
 - [ ] Clip drop: landing clip bounces softly into place (spring)
 - [ ] Clip delete: clip collapses horizontally before disappearing
 - [ ] Timeline zoom: ruler and clips scale smoothly, not in jumps
 - [ ] Timeline scroll: inertia (coasts after fast scroll, decelerates naturally)
-- [ ] Modal open: scale up from 95% with fade-in (200ms); close is reverse
-- [ ] Notification/toast: slides in from bottom-right, auto-dismisses with a progress bar underneath
-- [ ] Staggered entrance: when media bin loads multiple clips, they appear one by one (30ms stagger)
+- [x] Modal open: scale up from 95% with fade-in (200ms); close is reverse (SettingsDialog, ExportDialog, CrashRecoveryDialog)
+- [x] Notification/toast: slides in from bottom-right, auto-dismisses with a progress bar underneath (Toaster system built)
+- [x] Staggered entrance: when media bin loads multiple clips, they appear one by one (30ms stagger)
 - [ ] Loading skeletons: shimmer animation on all loading states before content appears
-- [ ] Welcome screen: recent projects fade in staggered on load
+- [x] Welcome screen: recent projects fade in staggered on load (stagger delay on RecentRow)
 - [ ] Waveform: bars grow up from the baseline progressively as data loads
-- [ ] Export progress bar: smooth fill, not chunky jumps
-- [ ] Playhead scrub: snappy, zero lag — this is the most-used interaction and must feel instant
+- [x] Export progress bar: smooth fill, not chunky jumps (gradient animation in ExportDialog)
+- [x] Playhead scrub: snappy, zero lag — this is the most-used interaction and must feel instant
 
 ---
 

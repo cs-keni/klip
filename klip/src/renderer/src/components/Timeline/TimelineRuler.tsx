@@ -1,5 +1,6 @@
-import { useRef, useCallback } from 'react'
+import { useRef, useCallback, useState } from 'react'
 import { formatDuration } from '@/lib/mediaUtils'
+import type { TimelineMarker } from '@/types/timeline'
 
 interface TimelineRulerProps {
   pxPerSec: number
@@ -9,6 +10,10 @@ interface TimelineRulerProps {
   onScrub: (time: number) => void
   onScrubStart: () => void
   onScrubEnd: () => void
+  markers?: TimelineMarker[]
+  onRemoveMarker?: (id: string) => void
+  onUpdateMarkerLabel?: (id: string, label: string) => void
+  format?: 'seconds' | 'timecode'
 }
 
 /** Return major/minor tick intervals (in seconds) for the current zoom level. */
@@ -30,10 +35,16 @@ export default function TimelineRuler({
   scrollLeft,
   onScrub,
   onScrubStart,
-  onScrubEnd
+  onScrubEnd,
+  markers = [],
+  onRemoveMarker,
+  onUpdateMarkerLabel,
+  format = 'seconds'
 }: TimelineRulerProps): JSX.Element {
   const rulerRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
+  const [editingMarkerId, setEditingMarkerId] = useState<string | null>(null)
+  const [editingLabel, setEditingLabel] = useState('')
 
   const timeFromEvent = useCallback(
     (e: MouseEvent | React.MouseEvent) => {
@@ -99,13 +110,83 @@ export default function TimelineRuler({
           >
             {isMajor && (
               <span className="text-[9px] font-mono text-[var(--text-muted)] leading-none pl-1 pb-[3px] whitespace-nowrap">
-                {formatRulerTime(time)}
+                {formatRulerTime(time, format)}
               </span>
             )}
             <div
               className={isMajor ? 'w-px bg-[var(--border-strong)]' : 'w-px bg-[var(--border-subtle)]'}
               style={{ height: isMajor ? 10 : 6 }}
             />
+          </div>
+        )
+      })}
+
+      {/* Markers */}
+      {markers.map((marker) => {
+        const left = marker.time * pxPerSec
+        const isEditing = editingMarkerId === marker.id
+
+        return (
+          <div
+            key={marker.id}
+            className="absolute bottom-0 z-20 group"
+            style={{ left }}
+          >
+            {/* Downward-pointing pin */}
+            <div
+              className="relative cursor-pointer"
+              title={marker.label || `Marker at ${formatRulerTime(marker.time)} — double-click to rename, right-click to delete`}
+              onClick={(e) => {
+                e.stopPropagation()
+                onScrub(marker.time)
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                onRemoveMarker?.(marker.id)
+              }}
+              onDoubleClick={(e) => {
+                e.stopPropagation()
+                setEditingMarkerId(marker.id)
+                setEditingLabel(marker.label)
+              }}
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" className="-translate-x-[5px]">
+                <polygon points="5,10 0,0 10,0" fill={marker.color} />
+              </svg>
+              {/* Label */}
+              {marker.label && !isEditing && (
+                <span
+                  className="absolute bottom-[10px] left-1/2 -translate-x-1/2 text-[9px] font-medium whitespace-nowrap pointer-events-none px-1 rounded"
+                  style={{ color: marker.color, textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
+                >
+                  {marker.label}
+                </span>
+              )}
+            </div>
+
+            {/* Inline label editor */}
+            {isEditing && (
+              <input
+                autoFocus
+                value={editingLabel}
+                onChange={(e) => setEditingLabel(e.target.value)}
+                onBlur={() => {
+                  onUpdateMarkerLabel?.(marker.id, editingLabel.trim())
+                  setEditingMarkerId(null)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    onUpdateMarkerLabel?.(marker.id, editingLabel.trim())
+                    setEditingMarkerId(null)
+                  }
+                  if (e.key === 'Escape') setEditingMarkerId(null)
+                  e.stopPropagation()
+                }}
+                className="absolute bottom-[10px] left-1/2 -translate-x-1/2 w-24 text-[9px] px-1 py-0 rounded border border-[var(--accent)] bg-[var(--bg-base)] text-[var(--text-primary)] outline-none"
+                onClick={(e) => e.stopPropagation()}
+              />
+            )}
           </div>
         )
       })}
@@ -123,7 +204,18 @@ export default function TimelineRuler({
   )
 }
 
-function formatRulerTime(seconds: number): string {
+function formatRulerTime(seconds: number, format: 'seconds' | 'timecode'): string {
+  if (format === 'timecode') {
+    const s  = Math.max(0, seconds)
+    const h  = Math.floor(s / 3600)
+    const m  = Math.floor((s % 3600) / 60)
+    const sc = Math.floor(s % 60)
+    const f  = Math.floor((s % 1) * 30)
+    if (h > 0) {
+      return `${h}:${String(m).padStart(2, '0')}:${String(sc).padStart(2, '0')}:${String(f).padStart(2, '0')}`
+    }
+    return `${String(m).padStart(2, '0')}:${String(sc).padStart(2, '0')}:${String(f).padStart(2, '0')}`
+  }
   if (seconds < 60) {
     return seconds % 1 === 0 ? `${seconds}s` : `${seconds.toFixed(1)}s`
   }

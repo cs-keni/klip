@@ -1,8 +1,9 @@
 import { ipcMain, dialog, app } from 'electron'
-import { readFile, writeFile, mkdir } from 'fs/promises'
+import { readFile, writeFile, mkdir, unlink } from 'fs/promises'
 import { join, dirname, relative, resolve, isAbsolute } from 'path'
 
-const RECENT_FILE = join(app.getPath('userData'), 'recent-projects.json')
+const RECENT_FILE    = join(app.getPath('userData'), 'recent-projects.json')
+const AUTOSAVE_FILE  = join(app.getPath('userData'), 'klip-autosave.klip')
 const MAX_RECENT = 10
 
 export interface RecentProject {
@@ -130,6 +131,33 @@ export function registerProjectHandlers(): void {
       return savePath
     } catch {
       return null
+    }
+  })
+
+  // ── Autosave (temp recovery file) ─────────────────────────────────────────
+  ipcMain.handle('project:autosave', async (_, data: unknown) => {
+    try {
+      await writeFile(AUTOSAVE_FILE, JSON.stringify(data, null, 2), 'utf-8')
+    } catch {
+      // Non-fatal — autosave is best-effort
+    }
+  })
+
+  ipcMain.handle('project:check-autosave', async () => {
+    try {
+      const raw = await readFile(AUTOSAVE_FILE, 'utf-8')
+      const data = JSON.parse(raw)
+      return { data }
+    } catch {
+      return null
+    }
+  })
+
+  ipcMain.handle('project:clear-autosave', async () => {
+    try {
+      await unlink(AUTOSAVE_FILE)
+    } catch {
+      // File may not exist — that's fine
     }
   })
 

@@ -38,6 +38,9 @@ const SHORTCUT_GROUPS: { heading: string; rows: { label: string; keys: string[] 
       { label: 'Ripple delete selected',    keys: ['Shift', 'Delete'] },
       { label: 'Trim end to playhead',      keys: ['Q'] },
       { label: 'Trim start to playhead',    keys: ['W'] },
+      { label: 'Drop marker at playhead',   keys: ['M'] },
+      { label: 'Next edit point',           keys: ['↓'] },
+      { label: 'Previous edit point',       keys: ['↑'] },
       { label: 'Zoom to fit',              keys: ['\\'] },
       { label: 'Toggle snap',              keys: ['Ctrl', '\\'] }
     ]

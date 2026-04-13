@@ -7,6 +7,7 @@ import { useProjectStore } from '@/stores/projectStore'
 import { useMediaStore } from '@/stores/mediaStore'
 import { useTimelineStore } from '@/stores/timelineStore'
 import { useAppStore } from '@/stores/appStore'
+import { toast } from '@/stores/toastStore'
 import type { Track } from '@/types/timeline'
 
 // ── Default timeline state ───────────────────────────────────────────────────
@@ -21,9 +22,9 @@ const DEFAULT_TRACKS: Track[] = [
 // ── Serialization ────────────────────────────────────────────────────────────
 
 export function serializeProject(): object {
-  const { projectName, settings } = useProjectStore.getState()
+  const { projectName, projectPath, settings } = useProjectStore.getState()
   const { clips: mediaClips } = useMediaStore.getState()
-  const { tracks, clips: timelineClips, transitions } = useTimelineStore.getState()
+  const { tracks, clips: timelineClips, transitions, markers } = useTimelineStore.getState()
 
   // Strip base64 thumbnails — they can be multiple MB and are fully regenerable
   // from source media when the project is reopened. thumbnailStatus resets to
@@ -48,7 +49,9 @@ export function serializeProject(): object {
     mediaClips: strippedMediaClips,
     tracks,
     timelineClips: strippedTimelineClips,
-    transitions
+    transitions,
+    markers: markers ?? [],
+    _projectPath: projectPath  // used by autosave recovery to restore the file path
   }
 }
 
@@ -75,6 +78,7 @@ function deserializeProject(data: any, path: string): void {
     tracks: data.tracks ?? DEFAULT_TRACKS,
     clips: data.timelineClips ?? [],
     transitions: data.transitions ?? [],
+    markers: data.markers ?? [],
     selectedClipId: null,
     selectedClipIds: [],
     clipboard: null,
@@ -102,6 +106,8 @@ export async function saveProject(): Promise<boolean> {
   if (!savedPath) return false
 
   useProjectStore.setState({ projectPath: savedPath, hasUnsavedChanges: false })
+  void window.api.project.clearAutosave()
+  toast('Project saved', 'success', 2000)
   return true
 }
 
@@ -115,6 +121,33 @@ export async function saveProjectAs(): Promise<boolean> {
   if (!savedPath) return false
 
   useProjectStore.setState({ projectPath: savedPath, hasUnsavedChanges: false })
+  void window.api.project.clearAutosave()
+  toast('Project saved', 'success', 2000)
+  return true
+}
+
+/**
+ * Restore a project from the autosave temp file.
+ * Returns true if an autosave was found and restored.
+ */
+export async function restoreAutosave(): Promise<boolean> {
+  const result = await window.api.project.checkAutosave()
+  if (!result) return false
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = result.data as any
+  deserializeProject(data, data._projectPath ?? null)
+
+  // Mark as having unsaved changes (this is a recovery, not a clean save)
+  useProjectStore.setState({ hasUnsavedChanges: true })
+
+  useAppStore.getState().setView('editor')
+  void window.api.project.clearAutosave()
+
+  const { checkMissingFiles, checkExistingProxies } = useMediaStore.getState()
+  void checkMissingFiles()
+  void checkExistingProxies()
+
   return true
 }
 
