@@ -1,6 +1,6 @@
 import { useRef, useEffect, useMemo, useState, useCallback, type ReactNode, type CSSProperties } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, Volume2, Maximize2, Repeat, Zap, X, Loader2, ChevronUp } from 'lucide-react'
+import { Play, Pause, Volume2, VolumeX, Maximize2, Repeat, Zap, X, Loader2, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip } from '@/components/ui/tooltip'
 import { pathToFileUrl, formatTimecode } from '@/lib/mediaUtils'
@@ -95,7 +95,8 @@ export default function PreviewPanel(): JSX.Element {
     isPlaying, setIsPlaying,
     shuttleSpeed, setShuttleSpeed,
     loopIn, loopOut, loopEnabled,
-    toggleLoop
+    toggleLoop,
+    masterVolume, setMasterVolume
   } = useTimelineStore()
 
   const { clips: mediaClips } = useMediaStore()
@@ -161,6 +162,13 @@ export default function PreviewPanel(): JSX.Element {
   const loopEnabledRef       = useRef(loopEnabled)
   const shuttleSpeedRef      = useRef(shuttleSpeed)
   const previewSpeedRef      = useRef(previewSpeed)
+  const masterVolumeRef      = useRef(masterVolume)
+  const lastMasterVolumeRef  = useRef(masterVolume > 0 ? masterVolume : 1)
+
+  useEffect(() => {
+    masterVolumeRef.current = masterVolume
+    if (masterVolume > 0) lastMasterVolumeRef.current = masterVolume
+  }, [masterVolume])
 
   useEffect(() => { videoClipsRef.current      = videoClips   }, [videoClips])
   useEffect(() => { audioClipsRef.current      = audioClips   }, [audioClips])
@@ -344,11 +352,14 @@ export default function PreviewPanel(): JSX.Element {
     const tlClip = findAudioClipAt(fromTime)
     if (!tlClip) { audio.pause(); return }
 
+    // Linked audio clips have their audio routed through the video element — skip them here
+    if (tlClip.linkedClipId) { audio.pause(); return }
+
     const media = mediaClipsRef.current.find((m) => m.id === tlClip.mediaClipId)
     if (!media?.path) return
 
     audio.muted  = isEffectivelyMuted(tlClip.trackId, tracksRef.current)
-    audio.volume = tlClip.volume ?? 1
+    audio.volume = Math.max(0, Math.min(1, (tlClip.volume ?? 1) * masterVolumeRef.current))
 
     const url    = pathToFileUrl(media.path) // audio: always use source, proxies are video-only
     const seekTo = tlClip.trimStart + (fromTime - tlClip.startTime)
@@ -387,8 +398,14 @@ export default function PreviewPanel(): JSX.Element {
     }
 
     if (media?.type === 'video') {
-      video.volume = tlClip.volume ?? 1
-      video.muted  = isEffectivelyMuted(tlClip.trackId, tracksRef.current)
+      // Resolve audio control via linked audio clip (if any)
+      const linkedAudio = tlClip.linkedClipId
+        ? audioClipsRef.current.find((c) => c.id === tlClip.linkedClipId)
+        : null
+      const clipVol = linkedAudio?.volume ?? tlClip.volume ?? 1
+      video.volume = Math.max(0, Math.min(1, clipVol * masterVolumeRef.current))
+      video.muted  = isEffectivelyMuted(tlClip.trackId, tracksRef.current) ||
+        (linkedAudio ? isEffectivelyMuted(linkedAudio.trackId, tracksRef.current) : false)
       // Effective rate = clip speed × user preview speed × shuttle multiplier (forward only)
       const shuttle = shuttleSpeedRef.current
       const effectiveRate = speed * previewSpeedRef.current * (shuttle > 0 ? shuttle : 1)
@@ -1430,11 +1447,33 @@ export default function PreviewPanel(): JSX.Element {
                     </button>
                   </Tooltip>
 
-                  <Tooltip content="Volume (coming soon)">
-                    <button className="text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors">
-                      <Volume2 size={13} />
-                    </button>
-                  </Tooltip>
+                  {/* Master volume */}
+                  <div className="flex items-center gap-1">
+                    <Tooltip content={masterVolume === 0 ? 'Unmute' : `Master volume: ${Math.round(masterVolume * 100)}%`}>
+                      <button
+                        onClick={() =>
+                          setMasterVolume(masterVolume > 0 ? 0 : lastMasterVolumeRef.current)
+                        }
+                        className="text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+                      >
+                        {masterVolume === 0
+                          ? <VolumeX size={13} />
+                          : <Volume2 size={13} />
+                        }
+                      </button>
+                    </Tooltip>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={Math.round(masterVolume * 100)}
+                      onChange={(e) => setMasterVolume(Number(e.target.value) / 100)}
+                      className="w-14 h-1 cursor-pointer accent-[var(--accent)]"
+                      title={`Master volume: ${Math.round(masterVolume * 100)}%`}
+                      style={{ appearance: 'auto' }}
+                    />
+                  </div>
 
                   <Tooltip content="Fullscreen  F">
                     <button

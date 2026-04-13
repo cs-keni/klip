@@ -256,30 +256,41 @@ Aesthetic: dark, modern, fluid — closer to Figma/Linear than Blender.
 
 ---
 
-## Phase 5 — Audio
+## Phase 5a — Audio Core ✅ COMPLETE
 
-> Goal: Full audio control — game sound, music, voice, all in balance.
+> Goal: Linked video+audio clips, per-clip and master volume, extra audio track.
 
-- [ ] Multiple audio tracks on the timeline (at least 3: Video Audio, Music, Extra)
-- [ ] Each video clip carries its audio by default (linked video + audio)
-- [ ] Unlink audio from video clip (detach to manipulate independently)
-- [ ] Drag music from music library onto a music track lane
-- [ ] Per-clip volume slider (0–200%, default 100%)
-- [ ] Audio normalization per clip — analyze and auto-adjust gain to a target loudness (one-click)
-- [ ] Per-track mute button and solo button
-- [ ] Track locking applies to audio tracks too
-- [ ] Waveform visualization on all audio clips (generated from FFmpeg)
-  - [ ] Cached after first generation, not recomputed on every open
-- [ ] Audio fade in / fade out handles on clip edges (drag to create a fade ramp)
-- [ ] Master volume control
-- [ ] Audio level meters in the preview panel (show peaks in real time during playback)
+- [x] Multiple audio tracks on the timeline (Video Audio `a1`, Extra Audio `a2`, Music `m1`)
+- [x] Each video clip carries its audio by default — auto-creates a linked audio clip on `a1` when a video is dropped on the video track
+- [x] Linked clip sync — move, trim, split, ripple-delete, and delete all keep linked video+audio in lockstep
+- [x] Unlink audio from video clip — right-click → "Unlink Audio" breaks the link so clips move independently
+- [x] Drag music from music library onto a music track lane (already worked; preserved)
+- [x] Per-clip volume slider (0–200%, default 100%) — right-click any clip → Volume
+- [x] Per-track mute button and solo button (already existed; preserved)
+- [x] Track locking applies to audio tracks (already existed; preserved)
+- [x] Waveform visualization on pure audio clips (music library tracks on timeline)
+- [x] Master volume control — slider in preview panel controls bar; clamps HTML5 playback to 100%, full range applied at export
 
 **QoL / UX:**
-- [ ] Waveform renders progressively (bars appear left to right as data is computed)
-- [ ] Color-coded tracks (video audio = blue, music = green, extra = purple)
-- [ ] Volume slider animates smoothly when adjusted with scroll wheel
-- [ ] Clipping indicator on audio meter (flashes red when audio peaks above 0dB)
-- [ ] Mute button animates (icon cross-fade, track dims)
+- [x] Color-coded tracks (video audio = blue, music = green, extra = blue)
+- [x] Linked audio clip shows a chain-link badge on the timeline clip
+- [x] Volume badge visible on clip when not at 100%
+- [x] Master volume icon click toggles mute (0 ↔ last value)
+
+---
+
+## Phase 5b — Audio Advanced
+
+> Goal: Waveform for video clips, audio fades, normalization, level meters.
+
+- [ ] Waveform visualization for video clips (requires FFmpeg audio extraction IPC handler)
+  - [ ] Cached to disk after first generation, not recomputed on every open
+  - [ ] Waveform bars grow up progressively as data loads
+- [ ] Audio fade in / fade out handles on clip edges — drag to create a ramp; rendered and applied at export
+- [ ] Audio normalization per clip — FFmpeg loudnorm analysis → one-click gain adjustment
+- [ ] Audio level meters in the preview panel — Web Audio API AnalyserNode tap on video element, real-time peak display
+- [ ] Clipping indicator (flashes red when peaks above 0 dB)
+- [ ] Volume slider animates smoothly on scroll wheel adjustment
 
 ---
 

@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, useMotionValue, AnimatePresence } from 'framer-motion'
-import { Volume2, Type, Zap, Palette, Crop, ArrowRightLeft, X } from 'lucide-react'
+import { Volume2, Type, Zap, Palette, Crop, ArrowRightLeft, X, Unlink, Link2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatDuration } from '@/lib/mediaUtils'
 import { useTimelineStore } from '@/stores/timelineStore'
@@ -55,7 +55,7 @@ export default function TimelineClipView({
   const {
     clips, transitions, playheadTime,
     moveClip, trimClip, selectClip, toggleClipInSelection,
-    setClipVolume, setClipSpeed,
+    setClipVolume, setClipSpeed, unlinkClip,
     setTextSettings, setColorSettings, setCropSettings,
     addTransition, removeTransition,
     snapEnabled
@@ -282,6 +282,16 @@ export default function TimelineClipView({
             </div>
           )}
 
+          {/* Linked audio badge */}
+          {clip.linkedClipId && dispWidth > 28 && (
+            <div
+              className="absolute bottom-1 right-1 pointer-events-none z-10 opacity-50"
+              title="Linked to audio clip"
+            >
+              <Link2 size={8} style={{ color: style.text }} />
+            </div>
+          )}
+
           {/* Name + duration + badges */}
           {showLabel && (
             <div className="absolute inset-0 flex items-start justify-between px-1.5 pt-1 gap-1 pointer-events-none overflow-hidden">
@@ -387,6 +397,7 @@ export default function TimelineClipView({
             onCropChange={(s) => setCropSettings(clip.id, s)}
             onAddTransition={(t) => addTransition(t)}
             onRemoveTransition={(id) => removeTransition(id)}
+            onUnlink={() => unlinkClip(clip.id)}
             onClose={() => setCtxMenu(null)}
           />
         )}
@@ -404,7 +415,7 @@ const SPEED_OPTIONS = [0.25, 0.5, 1, 1.5, 2, 4]
 function ClipContextMenu({
   x, y, clip, clips, transitions,
   onVolumeChange, onSpeedChange, onTextChange,
-  onColorChange, onCropChange, onAddTransition, onRemoveTransition, onClose
+  onColorChange, onCropChange, onAddTransition, onRemoveTransition, onUnlink, onClose
 }: {
   x: number
   y: number
@@ -418,6 +429,7 @@ function ClipContextMenu({
   onCropChange: (s: CropSettings | undefined) => void
   onAddTransition: (t: Transition) => void
   onRemoveTransition: (id: string) => void
+  onUnlink: () => void
   onClose: () => void
 }): JSX.Element {
   const menuRef = useRef<HTMLDivElement>(null)
@@ -488,11 +500,16 @@ function ClipContextMenu({
           onToggle={() => toggleSection('volume')}
         >
           <SliderRow
-            min={0} max={100} step={1}
+            min={0} max={200} step={1}
             value={Math.round(volume * 100)}
             display={`${Math.round(volume * 100)}%`}
             onChange={(v) => onVolumeChange(v / 100)}
           />
+          {volume > 1.005 && (
+            <p className="text-[9px] text-amber-400/70 mt-1">
+              &gt;100% applies gain at export; preview is capped at 100%
+            </p>
+          )}
         </MenuSection>
       )}
 
@@ -697,6 +714,19 @@ function ClipContextMenu({
             )}
           </div>
         </MenuSection>
+      )}
+
+      {/* ── Unlink Audio ─────────────────────────────────────────────────── */}
+      {clip.linkedClipId && (
+        <div className="border-t border-[var(--border-subtle)] py-1">
+          <button
+            onClick={() => { onUnlink(); onClose() }}
+            className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-left text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-amber-300 transition-colors duration-75"
+          >
+            <span className="opacity-70"><Unlink size={11} /></span>
+            Unlink Audio
+          </button>
+        </div>
       )}
     </motion.div>,
     document.body

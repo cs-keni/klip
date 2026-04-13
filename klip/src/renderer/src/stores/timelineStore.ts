@@ -7,10 +7,11 @@ import type {
 type TrimPatch = Partial<Pick<TimelineClip, 'startTime' | 'trimStart' | 'duration'>>
 
 const DEFAULT_TRACKS: Track[] = [
-  { id: 'v1',      type: 'video',   name: 'Video 1', isLocked: false, isMuted: false, isSolo: false },
-  { id: 'a1',      type: 'audio',   name: 'Audio 1', isLocked: false, isMuted: false, isSolo: false },
-  { id: 'm1',      type: 'music',   name: 'Music',   isLocked: false, isMuted: false, isSolo: false },
-  { id: 'overlay1',type: 'overlay', name: 'Text',    isLocked: false, isMuted: false, isSolo: false }
+  { id: 'v1',       type: 'video',   name: 'Video 1',     isLocked: false, isMuted: false, isSolo: false },
+  { id: 'a1',       type: 'audio',   name: 'Audio 1',     isLocked: false, isMuted: false, isSolo: false },
+  { id: 'a2',       type: 'audio',   name: 'Extra Audio', isLocked: false, isMuted: false, isSolo: false },
+  { id: 'm1',       type: 'music',   name: 'Music',       isLocked: false, isMuted: false, isSolo: false },
+  { id: 'overlay1', type: 'overlay', name: 'Text',        isLocked: false, isMuted: false, isSolo: false }
 ]
 
 interface TimelineState {
@@ -53,6 +54,7 @@ interface TimelineState {
 
   // ── Clip actions ──────────────────────────────────────────────────────────
   addClip: (clip: TimelineClip) => void
+  addClips: (clips: TimelineClip[]) => void
   removeClip: (id: string) => void
   removeSelectedClips: () => void
   selectClip: (id: string | null) => void
@@ -66,6 +68,7 @@ interface TimelineState {
   copySelectedClips: () => void
   pasteClips: () => void
   closeGap: (trackId: string, gapStartTime: number) => void
+  unlinkClip: (id: string) => void
 
   // ── Playback ──────────────────────────────────────────────────────────────
   setIsPlaying: (v: boolean) => void
@@ -87,6 +90,10 @@ interface TimelineState {
   toggleSolo:  (trackId: string) => void
   toggleLock:  (trackId: string) => void
   toggleSnap:  () => void
+
+  // ── Master volume ──────────────────────────────────────────────────────────
+  masterVolume: number
+  setMasterVolume: (v: number) => void
 
   // ── Clip audio ────────────────────────────────────────────────────────────
   setClipVolume: (clipId: string, volume: number) => void
@@ -132,6 +139,7 @@ export const useTimelineStore = create<TimelineState>((set) => ({
   loopEnabled:    false,
   past:           [],
   future:         [],
+  masterVolume:   1,
 
   setIsPlaying: (v) => set({ isPlaying: v }),
   setShuttleSpeed: (speed) => set({ shuttleSpeed: speed }),
@@ -154,20 +162,41 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       selectedClipIds: [clip.id]
     })),
 
-  removeClip: (id) =>
+  addClips: (clips) =>
     set((s) => ({
       past: [...s.past.slice(-49), snapshot(s)],
       future: [],
-      clips: s.clips.filter((c) => c.id !== id),
-      transitions: s.transitions.filter((t) => t.fromClipId !== id && t.toClipId !== id),
-      selectedClipId:  s.selectedClipId  === id ? null : s.selectedClipId,
-      selectedClipIds: s.selectedClipIds.filter((x) => x !== id)
+      clips: [...s.clips, ...clips],
+      selectedClipId:  clips[0]?.id ?? null,
+      selectedClipIds: clips.map((c) => c.id)
     })),
+
+  removeClip: (id) =>
+    set((s) => {
+      const clip = s.clips.find((c) => c.id === id)
+      const linkedId = clip?.linkedClipId
+      const idsToRemove = new Set([id, ...(linkedId ? [linkedId] : [])])
+      return {
+        past: [...s.past.slice(-49), snapshot(s)],
+        future: [],
+        clips: s.clips.filter((c) => !idsToRemove.has(c.id)),
+        transitions: s.transitions.filter(
+          (t) => !idsToRemove.has(t.fromClipId) && !idsToRemove.has(t.toClipId)
+        ),
+        selectedClipId:  idsToRemove.has(s.selectedClipId ?? '') ? null : s.selectedClipId,
+        selectedClipIds: s.selectedClipIds.filter((x) => !idsToRemove.has(x))
+      }
+    }),
 
   removeSelectedClips: () =>
     set((s) => {
       if (s.selectedClipIds.length === 0) return s
       const ids = new Set(s.selectedClipIds)
+      // Also pull in any linked clips
+      for (const selId of s.selectedClipIds) {
+        const linked = s.clips.find((c) => c.id === selId)?.linkedClipId
+        if (linked) ids.add(linked)
+      }
       return {
         past: [...s.past.slice(-49), snapshot(s)],
         future: [],
@@ -203,62 +232,74 @@ export const useTimelineStore = create<TimelineState>((set) => ({
     }),
 
   moveClip: (id, startTime) =>
-    set((s) => ({
-      past: [...s.past.slice(-49), snapshot(s)],
-      future: [],
-      clips: s.clips.map((c) =>
-        c.id === id ? { ...c, startTime: Math.max(0, startTime) } : c
-      )
-    })),
+    set((s) => {
+      const clip = s.clips.find((c) => c.id === id)
+      const linkedId = clip?.linkedClipId
+      return {
+        past: [...s.past.slice(-49), snapshot(s)],
+        future: [],
+        clips: s.clips.map((c) => {
+          if (c.id === id || (linkedId && c.id === linkedId))
+            return { ...c, startTime: Math.max(0, startTime) }
+          return c
+        })
+      }
+    }),
 
   trimClip: (id, patch) =>
-    set((s) => ({
-      past: [...s.past.slice(-49), snapshot(s)],
-      future: [],
-      clips: s.clips.map((c) => {
-        if (c.id !== id) return c
-        const next = { ...c, ...patch }
-        next.startTime = Math.max(0, next.startTime ?? c.startTime)
-        next.trimStart = Math.max(0, next.trimStart ?? c.trimStart)
-        next.duration  = Math.max(0.1, next.duration ?? c.duration)
-        return next
-      })
-    })),
+    set((s) => {
+      const clip = s.clips.find((c) => c.id === id)
+      const linkedId = clip?.linkedClipId
+      return {
+        past: [...s.past.slice(-49), snapshot(s)],
+        future: [],
+        clips: s.clips.map((c) => {
+          if (c.id !== id && c.id !== linkedId) return c
+          const next = { ...c, ...patch }
+          next.startTime = Math.max(0, next.startTime ?? c.startTime)
+          next.trimStart = Math.max(0, next.trimStart ?? c.trimStart)
+          next.duration  = Math.max(0.1, next.duration ?? c.duration)
+          return next
+        })
+      }
+    }),
 
   trimToPlayhead: (id, side) =>
     set((s) => {
       const clip = s.clips.find((c) => c.id === id)
       if (!clip) return s
       const playhead = s.playheadTime
+      const linkedId = clip.linkedClipId
 
       if (side === 'end') {
-        // Q — trim clip's end to playhead (playhead must be inside the clip)
         const newDur = playhead - clip.startTime
         if (newDur < 0.1 || playhead >= clip.startTime + clip.duration) return s
         return {
           past: [...s.past.slice(-49), snapshot(s)],
           future: [],
           clips: s.clips.map((c) =>
-            c.id === id ? { ...c, duration: newDur } : c
+            c.id === id || (linkedId && c.id === linkedId)
+              ? { ...c, duration: newDur }
+              : c
           )
         }
       } else {
-        // W — trim clip's start to playhead (playhead must be inside the clip)
         const dt = playhead - clip.startTime
         if (dt < 0 || playhead >= clip.startTime + clip.duration - 0.1) return s
         return {
           past: [...s.past.slice(-49), snapshot(s)],
           future: [],
-          clips: s.clips.map((c) =>
-            c.id === id
-              ? {
-                  ...c,
-                  startTime: playhead,
-                  trimStart: Math.max(0, c.trimStart + dt * (c.speed ?? 1)),
-                  duration:  c.duration - dt
-                }
-              : c
-          )
+          clips: s.clips.map((c) => {
+            if (c.id === id || (linkedId && c.id === linkedId)) {
+              return {
+                ...c,
+                startTime: playhead,
+                trimStart: Math.max(0, c.trimStart + dt * (c.speed ?? 1)),
+                duration:  c.duration - dt
+              }
+            }
+            return c
+          })
         }
       }
     }),
@@ -270,13 +311,43 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       const splitOffset = s.playheadTime - clip.startTime
       if (splitOffset <= 0.05 || splitOffset >= clip.duration - 0.05) return s
 
-      const left: TimelineClip  = { ...clip, duration: splitOffset }
+      const linkedClip = clip.linkedClipId
+        ? s.clips.find((c) => c.id === clip.linkedClipId) ?? null
+        : null
+
+      const rightId       = crypto.randomUUID()
+      const linkedRightId = linkedClip ? crypto.randomUUID() : undefined
+
+      const left: TimelineClip = {
+        ...clip,
+        duration: splitOffset,
+        linkedClipId: linkedClip ? clip.linkedClipId : undefined
+      }
       const right: TimelineClip = {
         ...clip,
-        id: crypto.randomUUID(),
+        id: rightId,
         startTime: s.playheadTime,
         trimStart: clip.trimStart + splitOffset * (clip.speed ?? 1),
-        duration:  clip.duration - splitOffset
+        duration:  clip.duration - splitOffset,
+        linkedClipId: linkedRightId
+      }
+
+      let linkedLeft: TimelineClip | null = null
+      let linkedRight: TimelineClip | null = null
+      if (linkedClip && linkedRightId) {
+        linkedLeft = {
+          ...linkedClip,
+          duration: splitOffset,
+          linkedClipId: clip.id  // keeps pointing to left half (same id)
+        }
+        linkedRight = {
+          ...linkedClip,
+          id: linkedRightId,
+          startTime: s.playheadTime,
+          trimStart: linkedClip.trimStart + splitOffset * (linkedClip.speed ?? 1),
+          duration:  linkedClip.duration - splitOffset,
+          linkedClipId: rightId
+        }
       }
 
       const newTransitions = s.transitions.map((t) => {
@@ -284,12 +355,18 @@ export const useTimelineStore = create<TimelineState>((set) => ({
         return t
       })
 
+      const newClips = s.clips.flatMap((c) => {
+        if (c.id === id) return [left, right]
+        if (linkedClip && c.id === linkedClip.id) return [linkedLeft!, linkedRight!]
+        return [c]
+      })
+
       return {
         past: [...s.past.slice(-49), snapshot(s)],
         future: [],
         selectedClipId:  right.id,
         selectedClipIds: [right.id],
-        clips: s.clips.flatMap((c) => (c.id === id ? [left, right] : [c])),
+        clips: newClips,
         transitions: newTransitions
       }
     }),
@@ -298,20 +375,24 @@ export const useTimelineStore = create<TimelineState>((set) => ({
     set((s) => {
       const clip = s.clips.find((c) => c.id === id)
       if (!clip) return s
+      const linkedId = clip.linkedClipId
       const gapEnd = clip.startTime + clip.duration
+      const idsToRemove = new Set([id, ...(linkedId ? [linkedId] : [])])
       return {
         past: [...s.past.slice(-49), snapshot(s)],
         future: [],
-        selectedClipId:  s.selectedClipId  === id ? null : s.selectedClipId,
-        selectedClipIds: s.selectedClipIds.filter((x) => x !== id),
+        selectedClipId:  idsToRemove.has(s.selectedClipId ?? '') ? null : s.selectedClipId,
+        selectedClipIds: s.selectedClipIds.filter((x) => !idsToRemove.has(x)),
         clips: s.clips
-          .filter((c) => c.id !== id)
+          .filter((c) => !idsToRemove.has(c.id))
           .map((c) =>
             c.trackId === clip.trackId && c.startTime >= gapEnd - 0.001
               ? { ...c, startTime: c.startTime - clip.duration }
               : c
           ),
-        transitions: s.transitions.filter((t) => t.fromClipId !== id && t.toClipId !== id)
+        transitions: s.transitions.filter(
+          (t) => !idsToRemove.has(t.fromClipId) && !idsToRemove.has(t.toClipId)
+        )
       }
     }),
 
@@ -366,14 +447,14 @@ export const useTimelineStore = create<TimelineState>((set) => ({
     set((s) => {
       if (!s.clipboard || s.clipboard.length === 0) return s
       const playhead = s.playheadTime
-      // Offset all pasted clips relative to the earliest clip in the clipboard
       const minStart = Math.min(...s.clipboard.map((c) => c.startTime))
       const offset = playhead - minStart
 
       const pasted: TimelineClip[] = s.clipboard.map((c) => ({
         ...c,
         id: crypto.randomUUID(),
-        startTime: Math.max(0, c.startTime + offset)
+        startTime: Math.max(0, c.startTime + offset),
+        linkedClipId: undefined  // don't carry over dangling link refs
       }))
 
       const newIds = pasted.map((c) => c.id)
@@ -455,12 +536,32 @@ export const useTimelineStore = create<TimelineState>((set) => ({
 
   toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
 
+  unlinkClip: (id) =>
+    set((s) => {
+      const clip = s.clips.find((c) => c.id === id)
+      if (!clip?.linkedClipId) return s
+      const linkedId = clip.linkedClipId
+      return {
+        past: [...s.past.slice(-49), snapshot(s)],
+        future: [],
+        clips: s.clips.map((c) =>
+          c.id === id || c.id === linkedId
+            ? { ...c, linkedClipId: undefined }
+            : c
+        )
+      }
+    }),
+
+  // ── Master volume ─────────────────────────────────────────────────────────
+
+  setMasterVolume: (v) => set({ masterVolume: Math.max(0, Math.min(1, v)) }),
+
   // ── Clip audio ────────────────────────────────────────────────────────────
 
   setClipVolume: (clipId, volume) =>
     set((s) => ({
       clips: s.clips.map((c) =>
-        c.id === clipId ? { ...c, volume: Math.max(0, Math.min(1, volume)) } : c
+        c.id === clipId ? { ...c, volume: Math.max(0, Math.min(2, volume)) } : c
       )
     })),
 

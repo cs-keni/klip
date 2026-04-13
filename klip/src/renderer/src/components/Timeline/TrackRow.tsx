@@ -44,7 +44,7 @@ export default function TrackRow({
   selectedClipIds
 }: TrackRowProps): JSX.Element {
   const {
-    addClip, selectClip, renameTrack,
+    tracks, addClip, addClips, selectClip, renameTrack,
     toggleMute, toggleSolo, toggleLock,
     snapEnabled, closeGap
   } = useTimelineStore()
@@ -137,12 +137,51 @@ export default function TrackRow({
         const mediaClip = mediaClips.find((c) => c.id === mediaClipId)
         if (!mediaClip) return
         const startTime = computeDropTime(e.clientX)
+        const dur = mediaClip.duration > 0 ? mediaClip.duration : 5
+
+        // Video on video track → auto-create linked audio clip on a1
+        if (mediaClip.type === 'video' && track.type === 'video') {
+          const audioTrack = tracks.find((t) => t.type === 'audio')
+          if (audioTrack) {
+            const videoClipId = crypto.randomUUID()
+            const audioClipId = crypto.randomUUID()
+            addClips([
+              {
+                id: videoClipId,
+                mediaClipId,
+                trackId: track.id,
+                startTime,
+                duration: dur,
+                trimStart: 0,
+                type: 'video',
+                name: mediaClip.name,
+                thumbnail: mediaClip.thumbnail,
+                linkedClipId: audioClipId
+              },
+              {
+                id: audioClipId,
+                mediaClipId,
+                trackId: audioTrack.id,
+                startTime,
+                duration: dur,
+                trimStart: 0,
+                type: 'audio',
+                name: mediaClip.name,
+                thumbnail: null,
+                linkedClipId: videoClipId
+              }
+            ])
+            return
+          }
+        }
+
+        // Default: single clip (images, color clips, audio files, or video on non-video track)
         const newClip: TimelineClip = {
           id: crypto.randomUUID(),
           mediaClipId,
           trackId: track.id,
           startTime,
-          duration: mediaClip.duration > 0 ? mediaClip.duration : 5,
+          duration: dur,
           trimStart: 0,
           type: mediaClip.type === 'color' ? 'color' : mediaClip.type,
           name: mediaClip.name,
@@ -195,7 +234,7 @@ export default function TrackRow({
         } catch {}
       }
     },
-    [track, mediaClips, pxPerSec, scrollLeft, snapEnabled, addClip, addMediaClip, clips] // eslint-disable-line react-hooks/exhaustive-deps
+    [track, tracks, mediaClips, pxPerSec, scrollLeft, snapEnabled, addClip, addClips, addMediaClip, clips] // eslint-disable-line react-hooks/exhaustive-deps
   )
 
   // ── Track rename ───────────────────────────────────────────────────────────
