@@ -67,6 +67,10 @@ export interface ExportClip {
   duration: number
   volume: number
   speed?: number
+  /** Audio fade-in duration in seconds (0 = none). */
+  fadeIn?: number
+  /** Audio fade-out duration in seconds (0 = none). */
+  fadeOut?: number
   textSettings?: TextSettingsExport
   colorSettings?: ColorSettingsExport
   cropSettings?: CropSettingsExport
@@ -283,10 +287,19 @@ export function buildFFmpegArgs(job: ExportJob): string[] {
 
     function audioFadeFilters(): string {
       const parts: string[] = []
-      if (toTransition) {
+      // Clip-level fade in (takes priority over transition fade in)
+      const fadeIn = clip.fadeIn ?? 0
+      if (fadeIn > 0) {
+        parts.push(`afade=t=in:st=0:d=${fadeIn.toFixed(3)}`)
+      } else if (toTransition) {
         parts.push(`afade=t=in:st=0:d=${toTransition.duration.toFixed(3)}`)
       }
-      if (fromTransition) {
+      // Clip-level fade out (takes priority over transition fade out)
+      const fadeOut = clip.fadeOut ?? 0
+      if (fadeOut > 0) {
+        const fadeStart = Math.max(0, outDuration - fadeOut)
+        parts.push(`afade=t=out:st=${fadeStart.toFixed(3)}:d=${fadeOut.toFixed(3)}`)
+      } else if (fromTransition) {
         const fadeStart = Math.max(0, outDuration - fromTransition.duration)
         parts.push(`afade=t=out:st=${fadeStart.toFixed(3)}:d=${fromTransition.duration.toFixed(3)}`)
       }
@@ -435,19 +448,28 @@ export function buildFFmpegArgs(job: ExportJob): string[] {
     const clipLbl = `aclip${i}`
     const padLbl  = `apad${i}`
 
+    // Clip-level audio fades for this music/extra-audio clip
+    const aFadeIn  = clip.fadeIn  ?? 0
+    const aFadeOut = clip.fadeOut ?? 0
+    const aFadeFilters = [
+      aFadeIn  > 0 ? `afade=t=in:st=0:d=${aFadeIn.toFixed(3)}`                                                        : '',
+      aFadeOut > 0 ? `afade=t=out:st=${Math.max(0, clip.duration - aFadeOut).toFixed(3)}:d=${aFadeOut.toFixed(3)}` : ''
+    ].filter(Boolean).join(',')
+    const aFadeSuffix = aFadeFilters ? `,${aFadeFilters}` : ''
+
     if (clip.startTime > 0.001) {
       filterParts.push(
         `aevalsrc=0|0:channel_layout=${chLayout}:sample_rate=${sampleRate}:d=${clip.startTime.toFixed(6)}[${prefLbl}]`
       )
       filterParts.push(
         `[${ii}:a]atrim=start=${clip.trimStart.toFixed(6)}:end=${trimEnd.toFixed(6)},` +
-        `asetpts=PTS-STARTPTS${speedA},volume=${vol}[${clipLbl}]`
+        `asetpts=PTS-STARTPTS${speedA},volume=${vol}${aFadeSuffix}[${clipLbl}]`
       )
       filterParts.push(`[${prefLbl}][${clipLbl}]concat=n=2:v=0:a=1[${padLbl}]`)
     } else {
       filterParts.push(
         `[${ii}:a]atrim=start=${clip.trimStart.toFixed(6)}:end=${trimEnd.toFixed(6)},` +
-        `asetpts=PTS-STARTPTS${speedA},volume=${vol}[${padLbl}]`
+        `asetpts=PTS-STARTPTS${speedA},volume=${vol}${aFadeSuffix}[${padLbl}]`
       )
     }
 

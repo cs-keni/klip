@@ -97,6 +97,7 @@ interface TimelineState {
 
   // ── Clip audio ────────────────────────────────────────────────────────────
   setClipVolume: (clipId: string, volume: number) => void
+  setClipFades:  (clipId: string, fadeIn: number, fadeOut: number) => void
 
   // ── Phase 6 clip actions ──────────────────────────────────────────────────
   setClipSpeed:     (clipId: string, speed: number) => void
@@ -563,6 +564,19 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       clips: s.clips.map((c) =>
         c.id === clipId ? { ...c, volume: Math.max(0, Math.min(2, volume)) } : c
       )
+    })),
+
+  setClipFades: (clipId, fadeIn, fadeOut) =>
+    set((s) => ({
+      clips: s.clips.map((c) => {
+        if (c.id !== clipId) return c
+        const maxFade = c.duration / 2
+        return {
+          ...c,
+          fadeIn:  Math.max(0, Math.min(maxFade, fadeIn)),
+          fadeOut: Math.max(0, Math.min(maxFade, fadeOut))
+        }
+      })
     })),
 
   // ── Phase 6 clip actions ──────────────────────────────────────────────────

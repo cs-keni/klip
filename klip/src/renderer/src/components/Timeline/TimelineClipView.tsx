@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, useMotionValue, AnimatePresence } from 'framer-motion'
-import { Volume2, Type, Zap, Palette, Crop, ArrowRightLeft, X, Unlink, Link2 } from 'lucide-react'
+import { Volume2, Type, Zap, Palette, Crop, ArrowRightLeft, X, Unlink, Link2, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatDuration } from '@/lib/mediaUtils'
 import { useTimelineStore } from '@/stores/timelineStore'
@@ -55,7 +55,7 @@ export default function TimelineClipView({
   const {
     clips, transitions, playheadTime,
     moveClip, trimClip, selectClip, toggleClipInSelection,
-    setClipVolume, setClipSpeed, unlinkClip,
+    setClipVolume, setClipSpeed, setClipFades, unlinkClip,
     setTextSettings, setColorSettings, setCropSettings,
     addTransition, removeTransition,
     snapEnabled
@@ -64,8 +64,8 @@ export default function TimelineClipView({
 
   const mediaClip = mediaClips.find((m) => m.id === clip.mediaClipId) ?? null
 
-  // ── Waveform (audio clips only) ──────────────────────────────────────────────
-  const { peaks } = useWaveform(mediaClip?.path ?? null, clip.type)
+  // ── Waveform (audio + video clips) ──────────────────────────────────────────
+  const { peaks } = useWaveform(mediaClip?.path ?? null, clip.type, clip.id)
 
   // ── Motion values for 60fps drag ────────────────────────────────────────────
   const leftMV  = useMotionValue(clip.startTime * pxPerSec)
@@ -257,14 +257,36 @@ export default function TimelineClipView({
             style={{ background: `${style.border}55` }}
           />
 
-          {/* Waveform — audio clips only */}
+          {/* Waveform — audio and video clips */}
           {peaks && (
             <WaveformCanvas
               peaks={peaks}
               trimStart={clip.trimStart}
               duration={clip.duration}
               color={style.text}
-              opacity={0.4}
+              opacity={clip.type === 'video' ? 0.25 : 0.4}
+            />
+          )}
+
+          {/* Audio fade-in overlay */}
+          {(clip.fadeIn ?? 0) > 0 && (
+            <div
+              className="absolute top-0 bottom-0 left-0 pointer-events-none z-10"
+              style={{
+                width: Math.min((clip.fadeIn! * pxPerSec), dispWidth / 2),
+                background: `linear-gradient(to right, ${style.bg}, transparent)`
+              }}
+            />
+          )}
+
+          {/* Audio fade-out overlay */}
+          {(clip.fadeOut ?? 0) > 0 && (
+            <div
+              className="absolute top-0 bottom-0 right-0 pointer-events-none z-10"
+              style={{
+                width: Math.min((clip.fadeOut! * pxPerSec), dispWidth / 2),
+                background: `linear-gradient(to left, ${style.bg}, transparent)`
+              }}
             />
           )}
 
@@ -364,6 +386,32 @@ export default function TimelineClipView({
           />
         </div>
 
+        {/* ── Audio fade-in handle ──────────────────────────────────────────── */}
+        {clip.type !== 'text' && (
+          <FadeHandle
+            side="in"
+            fadeDuration={clip.fadeIn ?? 0}
+            clipDuration={clip.duration}
+            pxPerSec={pxPerSec}
+            clipHeight={clipHeight}
+            color={style.border}
+            onFadeChange={(newFadeIn) => setClipFades(clip.id, newFadeIn, clip.fadeOut ?? 0)}
+          />
+        )}
+
+        {/* ── Audio fade-out handle ─────────────────────────────────────────── */}
+        {clip.type !== 'text' && (
+          <FadeHandle
+            side="out"
+            fadeDuration={clip.fadeOut ?? 0}
+            clipDuration={clip.duration}
+            pxPerSec={pxPerSec}
+            clipHeight={clipHeight}
+            color={style.border}
+            onFadeChange={(newFadeOut) => setClipFades(clip.id, clip.fadeIn ?? 0, newFadeOut)}
+          />
+        )}
+
         {/* ── Transition badge at the right edge ───────────────────────────── */}
         {fromTransition && (
           <div
@@ -398,6 +446,9 @@ export default function TimelineClipView({
             onAddTransition={(t) => addTransition(t)}
             onRemoveTransition={(id) => removeTransition(id)}
             onUnlink={() => unlinkClip(clip.id)}
+            onFadeChange={(fi, fo) => setClipFades(clip.id, fi, fo)}
+            onNormalize={(v) => setClipVolume(clip.id, v)}
+            mediaPath={mediaClip?.path ?? null}
             onClose={() => setCtxMenu(null)}
           />
         )}
@@ -408,14 +459,18 @@ export default function TimelineClipView({
 
 // ── Clip context menu ──────────────────────────────────────────────────────────
 
-type Section = 'volume' | 'speed' | 'text' | 'colorgrade' | 'crop' | 'transition'
+type Section = 'volume' | 'fade' | 'speed' | 'text' | 'colorgrade' | 'crop' | 'transition'
 
 const SPEED_OPTIONS = [0.25, 0.5, 1, 1.5, 2, 4]
+
+/** Target integrated loudness for normalization (EBU R128 / YouTube standard). */
+const NORMALIZE_TARGET_LUFS = -18
 
 function ClipContextMenu({
   x, y, clip, clips, transitions,
   onVolumeChange, onSpeedChange, onTextChange,
-  onColorChange, onCropChange, onAddTransition, onRemoveTransition, onUnlink, onClose
+  onColorChange, onCropChange, onAddTransition, onRemoveTransition,
+  onUnlink, onFadeChange, onNormalize, mediaPath, onClose
 }: {
   x: number
   y: number
@@ -430,12 +485,16 @@ function ClipContextMenu({
   onAddTransition: (t: Transition) => void
   onRemoveTransition: (id: string) => void
   onUnlink: () => void
+  onFadeChange: (fadeIn: number, fadeOut: number) => void
+  onNormalize: (volume: number) => void
+  mediaPath: string | null
   onClose: () => void
 }): JSX.Element {
   const menuRef = useRef<HTMLDivElement>(null)
   const [openSection, setOpenSection] = useState<Section | null>(
     clip.type === 'text' ? 'text' : null
   )
+  const [normalizing, setNormalizing] = useState(false)
 
   // Find adjacent clips for transitions
   const adjacentNext = clips
@@ -465,6 +524,8 @@ function ClipContextMenu({
   // ── Local state mirrors for controlled sliders ──────────────────────────────
   const volume    = clip.volume ?? 1
   const speed     = clip.speed  ?? 1
+  const fadeIn    = clip.fadeIn  ?? 0
+  const fadeOut   = clip.fadeOut ?? 0
   const colorS    = clip.colorSettings ?? { brightness: 0, contrast: 0, saturation: 0 }
   const cropS     = clip.cropSettings  ?? { zoom: 1, panX: 0, panY: 0 }
   const textS     = clip.textSettings  ?? {
@@ -472,10 +533,28 @@ function ClipContextMenu({
     bold: false, italic: false, alignment: 'center', positionX: 0.5, positionY: 0.8
   }
 
-  const canHaveSpeed     = clip.type !== 'text'
+  const canHaveAudio      = clip.type !== 'text' && clip.type !== 'image' && clip.type !== 'color'
+  const canHaveFade       = clip.type !== 'text'
+  const canHaveSpeed      = clip.type !== 'text'
   const canHaveColorGrade = clip.type === 'video' || clip.type === 'image' || clip.type === 'color'
-  const canHaveCrop      = clip.type === 'video' || clip.type === 'image'
+  const canHaveCrop       = clip.type === 'video' || clip.type === 'image'
   const canHaveTransition = clip.type === 'video' && adjacentNext?.type === 'video'
+
+  async function handleNormalize() {
+    if (!mediaPath || normalizing) return
+    setNormalizing(true)
+    try {
+      const result = await window.api.waveform.analyzeLoudness(mediaPath)
+      if (result && isFinite(result.inputI)) {
+        const gainDB = NORMALIZE_TARGET_LUFS - result.inputI
+        const linear = Math.pow(10, gainDB / 20)
+        // Clamp to the 0-2 range (200% max)
+        onNormalize(Math.max(0, Math.min(2, linear)))
+      }
+    } finally {
+      setNormalizing(false)
+    }
+  }
 
   function toggleSection(s: Section) {
     setOpenSection((prev) => (prev === s ? null : s))
@@ -510,6 +589,55 @@ function ClipContextMenu({
               &gt;100% applies gain at export; preview is capped at 100%
             </p>
           )}
+          {/* Normalize button — only for clips with real audio */}
+          {canHaveAudio && mediaPath && (
+            <button
+              onClick={handleNormalize}
+              disabled={normalizing}
+              className={cn(
+                'mt-2 w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-[10px] font-medium transition-colors duration-100',
+                normalizing
+                  ? 'bg-[var(--bg-elevated)] text-[var(--text-muted)] cursor-not-allowed'
+                  : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:bg-[var(--accent)]/20 hover:text-[var(--accent)]'
+              )}
+            >
+              {normalizing
+                ? <><Loader2 size={9} className="animate-spin" /> Analyzing…</>
+                : <><Volume2 size={9} /> Normalize to −18 LUFS</>
+              }
+            </button>
+          )}
+        </MenuSection>
+      )}
+
+      {/* ── Audio Fades ──────────────────────────────────────────────────── */}
+      {canHaveFade && (
+        <MenuSection
+          icon={<span className="text-[9px] font-mono opacity-80">↗↘</span>}
+          label="Audio Fades"
+          open={openSection === 'fade'}
+          onToggle={() => toggleSection('fade')}
+        >
+          <div className="space-y-2">
+            <div>
+              <p className="text-[9px] text-[var(--text-muted)] mb-1">Fade In</p>
+              <SliderRow
+                min={0} max={Math.min(10, Math.floor(clip.duration / 2 * 10) / 10)} step={0.1}
+                value={parseFloat(fadeIn.toFixed(1))}
+                display={fadeIn > 0 ? `${fadeIn.toFixed(1)}s` : 'Off'}
+                onChange={(v) => onFadeChange(v, fadeOut)}
+              />
+            </div>
+            <div>
+              <p className="text-[9px] text-[var(--text-muted)] mb-1">Fade Out</p>
+              <SliderRow
+                min={0} max={Math.min(10, Math.floor(clip.duration / 2 * 10) / 10)} step={0.1}
+                value={parseFloat(fadeOut.toFixed(1))}
+                display={fadeOut > 0 ? `${fadeOut.toFixed(1)}s` : 'Off'}
+                onChange={(v) => onFadeChange(fadeIn, v)}
+              />
+            </div>
+          </div>
         </MenuSection>
       )}
 
@@ -1087,3 +1215,104 @@ function fmtSigned(v: number): string {
   const pct = Math.round(v * 100)
   return pct === 0 ? '0%' : pct > 0 ? `+${pct}%` : `${pct}%`
 }
+
+// ── FadeHandle ─────────────────────────────────────────────────────────────────
+// A small draggable diamond on the top edge of a clip that lets the user
+// scrub a fade-in or fade-out duration. Hover shows it; disappears when fade = 0.
+
+const FADE_HANDLE_PX = 10  // handle size in px
+
+function FadeHandle({
+  side,
+  fadeDuration,
+  clipDuration,
+  pxPerSec,
+  color,
+  onFadeChange
+}: {
+  side: 'in' | 'out'
+  fadeDuration: number
+  clipDuration: number
+  pxPerSec: number
+  clipHeight: number
+  color: string
+  onFadeChange: (newDuration: number) => void
+}): JSX.Element {
+  const isDragging = useRef(false)
+  const maxFade    = clipDuration / 2
+  const fadePx     = fadeDuration * pxPerSec
+
+  // Position the handle at the end of the fade region (clamped to clip bounds)
+  const handleLeft = side === 'in'
+    ? Math.min(fadePx, maxFade * pxPerSec)
+    : undefined
+  const handleRight = side === 'out'
+    ? Math.min(fadePx, maxFade * pxPerSec)
+    : undefined
+
+  function onPointerDown(e: React.PointerEvent) {
+    e.stopPropagation()
+    e.preventDefault()
+    if (e.button !== 0) return
+    isDragging.current = true
+    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+  }
+
+  function onPointerMove(e: React.PointerEvent) {
+    if (!isDragging.current) return
+    const rect = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect()
+    let rawPx: number
+    if (side === 'in') {
+      rawPx = e.clientX - rect.left
+    } else {
+      rawPx = rect.right - e.clientX
+    }
+    const newDur = Math.max(0, Math.min(maxFade, rawPx / pxPerSec))
+    onFadeChange(parseFloat(newDur.toFixed(2)))
+  }
+
+  function onPointerUp(e: React.PointerEvent) {
+    isDragging.current = false
+    ;(e.target as HTMLElement).releasePointerCapture(e.pointerId)
+  }
+
+  return (
+    <div
+      className="absolute top-0 z-20 group/fade"
+      style={{
+        left:   handleLeft  !== undefined ? handleLeft  - FADE_HANDLE_PX / 2 : undefined,
+        right:  handleRight !== undefined ? handleRight - FADE_HANDLE_PX / 2 : undefined,
+        width:  FADE_HANDLE_PX,
+        height: FADE_HANDLE_PX,
+        cursor: 'ew-resize',
+        // Show slightly above the clip top edge
+        top: -FADE_HANDLE_PX / 2 + 1
+      }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+    >
+      {/* Diamond shape */}
+      <div
+        className="w-full h-full rotate-45 border transition-opacity duration-100"
+        style={{
+          borderColor: color,
+          backgroundColor: fadeDuration > 0 ? color : 'transparent',
+          opacity: fadeDuration > 0 ? 0.9 : 0,
+          borderWidth: 1.5
+        }}
+      />
+      {/* Tooltip */}
+      {fadeDuration > 0 && (
+        <div
+          className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 whitespace-nowrap
+                     bg-black/80 text-white text-[9px] font-mono px-1 py-0.5 rounded
+                     opacity-0 group-hover/fade:opacity-100 transition-opacity duration-100 pointer-events-none z-30"
+        >
+          {side === 'in' ? 'Fade in' : 'Fade out'} {fadeDuration.toFixed(1)}s
+        </div>
+      )}
+    </div>
+  )
+}
+

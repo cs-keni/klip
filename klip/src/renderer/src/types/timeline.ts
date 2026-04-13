@@ -78,8 +78,12 @@ export interface TimelineClip {
   linkedClipId?: string
 
   // ── Phase 5 ─────────────────────────────────────
-  /** Playback volume multiplier (0–1, default 1). */
+  /** Playback volume multiplier (0–2, default 1). */
   volume?: number
+  /** Audio fade-in duration in seconds (0 = none). Applied at export. */
+  fadeIn?: number
+  /** Audio fade-out duration in seconds (0 = none). Applied at export. */
+  fadeOut?: number
 
   // ── Phase 6 ─────────────────────────────────────
   /** Playback speed multiplier (default 1.0). Source consumed = duration × speed. */

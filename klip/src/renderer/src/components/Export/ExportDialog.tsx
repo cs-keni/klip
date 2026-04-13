@@ -244,6 +244,8 @@ export default function ExportDialog({ onClose }: ExportDialogProps): JSX.Elemen
         duration:    c.duration,
         volume:      c.volume ?? 1,
         speed:       c.speed,
+        fadeIn:      c.fadeIn,
+        fadeOut:     c.fadeOut,
         textSettings:  c.textSettings,
         colorSettings: c.colorSettings,
         cropSettings:  c.cropSettings

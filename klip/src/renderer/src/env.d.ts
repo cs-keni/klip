@@ -43,6 +43,10 @@ interface Window {
       onQuickPreviewError: (cb: (message: string) => void) => (() => void)
       saveFrame: (dataUrl: string) => Promise<string | null>
     }
+    waveform: {
+      extract: (clipId: string, filePath: string) => Promise<number[] | null>
+      analyzeLoudness: (filePath: string) => Promise<{ inputI: number } | null>
+    }
     proxy: {
       generateProxy: (clipId: string, filePath: string) => void
       cancelProxy: (clipId: string) => void

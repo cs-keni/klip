@@ -143,6 +143,16 @@ export default function PreviewPanel(): JSX.Element {
     return allClips.reduce((max, c) => Math.max(max, c.startTime + c.duration), 0)
   }, [videoClips, audioClips])
 
+  // ── Audio level meters ────────────────────────────────────────────────────
+  const [audioLevels, setAudioLevels] = useState({ left: 0, right: 0 })
+  const [isClipping, setIsClipping]   = useState(false)
+  const clipFlashRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const audioCtxRef   = useRef<AudioContext | null>(null)
+  const analyserLRef  = useRef<AnalyserNode | null>(null)
+  const analyserRRef  = useRef<AnalyserNode | null>(null)
+  const meterRafRef   = useRef<number | null>(null)
+  const mediaSourceConnected = useRef(false)
+
   // ── Refs ─────────────────────────────────────────────────────────────────
   const videoRef             = useRef<HTMLVideoElement>(null)
   const audioRef             = useRef<HTMLAudioElement>(null)
@@ -182,6 +192,75 @@ export default function PreviewPanel(): JSX.Element {
   useEffect(() => { loopEnabledRef.current     = loopEnabled  }, [loopEnabled])
   useEffect(() => { shuttleSpeedRef.current    = shuttleSpeed }, [shuttleSpeed])
   useEffect(() => { previewSpeedRef.current    = previewSpeed }, [previewSpeed])
+
+  // ── Audio context + level meter setup ────────────────────────────────────
+  // Connect the video element to an AnalyserNode once, on mount.
+  // We split the stereo signal into L/R channels for the dual-bar meter.
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || mediaSourceConnected.current) return
+
+    try {
+      const ctx = new AudioContext()
+      audioCtxRef.current = ctx
+
+      const source    = ctx.createMediaElementSource(video)
+      const splitter  = ctx.createChannelSplitter(2)
+      const analyserL = ctx.createAnalyser()
+      const analyserR = ctx.createAnalyser()
+      const merger    = ctx.createChannelMerger(2)
+
+      analyserL.fftSize = 256
+      analyserR.fftSize = 256
+
+      source.connect(splitter)
+      splitter.connect(analyserL, 0)
+      splitter.connect(analyserR, 1)
+      analyserL.connect(merger, 0, 0)
+      analyserR.connect(merger, 0, 1)
+      merger.connect(ctx.destination)
+
+      analyserLRef.current = analyserL
+      analyserRRef.current = analyserR
+      mediaSourceConnected.current = true
+
+      const bufL = new Float32Array(analyserL.fftSize)
+      const bufR = new Float32Array(analyserR.fftSize)
+
+      function tick() {
+        meterRafRef.current = requestAnimationFrame(tick)
+        analyserL.getFloatTimeDomainData(bufL)
+        analyserR.getFloatTimeDomainData(bufR)
+
+        let maxL = 0, maxR = 0
+        for (let i = 0; i < bufL.length; i++) {
+          const a = Math.abs(bufL[i]); if (a > maxL) maxL = a
+        }
+        for (let i = 0; i < bufR.length; i++) {
+          const a = Math.abs(bufR[i]); if (a > maxR) maxR = a
+        }
+
+        // Clipping indicator: flash red for 800ms when either channel peaks >= 0 dB
+        if (maxL >= 1 || maxR >= 1) {
+          setIsClipping(true)
+          if (clipFlashRef.current) clearTimeout(clipFlashRef.current)
+          clipFlashRef.current = setTimeout(() => setIsClipping(false), 800)
+        }
+
+        setAudioLevels({ left: maxL, right: maxR })
+      }
+      tick()
+    } catch {
+      // AudioContext creation may fail in certain environments; ignore silently
+    }
+
+    return () => {
+      if (meterRafRef.current) cancelAnimationFrame(meterRafRef.current)
+      if (clipFlashRef.current) clearTimeout(clipFlashRef.current)
+      audioCtxRef.current?.close().catch(() => {})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])  // intentionally run once on mount
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   function findClipAt(time: number): TimelineClip | null {
@@ -1474,6 +1553,66 @@ export default function PreviewPanel(): JSX.Element {
                       style={{ appearance: 'auto' }}
                     />
                   </div>
+
+                  {/* Audio level meters */}
+                  <Tooltip content={isClipping ? 'Clipping! Peak above 0 dB' : 'Audio level (L/R)'}>
+                    <div className="flex items-end gap-0.5 h-4 cursor-default">
+                      {/* L channel */}
+                      <div className="flex flex-col-reverse gap-px w-1.5">
+                        {Array.from({ length: 8 }).map((_, i) => {
+                          const threshold = (i + 1) / 8
+                          const lit = audioLevels.left >= threshold
+                          const isHot = threshold > 0.875
+                          const isWarm = threshold > 0.625
+                          return (
+                            <div
+                              key={i}
+                              className="w-full rounded-[1px] transition-none"
+                              style={{
+                                height: 2,
+                                backgroundColor: lit
+                                  ? isClipping && isHot
+                                    ? '#ef4444'
+                                    : isHot
+                                      ? '#f97316'
+                                      : isWarm
+                                        ? '#eab308'
+                                        : '#22c55e'
+                                  : 'rgba(255,255,255,0.08)'
+                              }}
+                            />
+                          )
+                        })}
+                      </div>
+                      {/* R channel */}
+                      <div className="flex flex-col-reverse gap-px w-1.5">
+                        {Array.from({ length: 8 }).map((_, i) => {
+                          const threshold = (i + 1) / 8
+                          const lit = audioLevels.right >= threshold
+                          const isHot = threshold > 0.875
+                          const isWarm = threshold > 0.625
+                          return (
+                            <div
+                              key={i}
+                              className="w-full rounded-[1px] transition-none"
+                              style={{
+                                height: 2,
+                                backgroundColor: lit
+                                  ? isClipping && isHot
+                                    ? '#ef4444'
+                                    : isHot
+                                      ? '#f97316'
+                                      : isWarm
+                                        ? '#eab308'
+                                        : '#22c55e'
+                                  : 'rgba(255,255,255,0.08)'
+                              }}
+                            />
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </Tooltip>
 
                   <Tooltip content="Fullscreen  F">
                     <button

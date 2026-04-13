@@ -125,6 +125,16 @@ const api = {
       ipcRenderer.invoke('export:save-frame', dataUrl)
   },
 
+  waveform: {
+    /** Extract waveform peaks for a video clip (FFmpeg-based, cached to disk). */
+    extract: (clipId: string, filePath: string): Promise<number[] | null> =>
+      ipcRenderer.invoke('media:extract-waveform', { clipId, filePath }),
+
+    /** Analyze integrated loudness (LUFS) of a media file. */
+    analyzeLoudness: (filePath: string): Promise<{ inputI: number } | null> =>
+      ipcRenderer.invoke('media:analyze-loudness', { filePath })
+  },
+
   proxy: {
     /** Start proxy generation for a video clip. Progress/done/error arrive via event listeners. */
     generateProxy: (clipId: string, filePath: string): void =>

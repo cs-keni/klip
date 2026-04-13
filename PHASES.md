@@ -279,18 +279,18 @@ Aesthetic: dark, modern, fluid — closer to Figma/Linear than Blender.
 
 ---
 
-## Phase 5b — Audio Advanced
+## Phase 5b — Audio Advanced ✅ COMPLETE
 
 > Goal: Waveform for video clips, audio fades, normalization, level meters.
 
-- [ ] Waveform visualization for video clips (requires FFmpeg audio extraction IPC handler)
-  - [ ] Cached to disk after first generation, not recomputed on every open
-  - [ ] Waveform bars grow up progressively as data loads
-- [ ] Audio fade in / fade out handles on clip edges — drag to create a ramp; rendered and applied at export
-- [ ] Audio normalization per clip — FFmpeg loudnorm analysis → one-click gain adjustment
-- [ ] Audio level meters in the preview panel — Web Audio API AnalyserNode tap on video element, real-time peak display
-- [ ] Clipping indicator (flashes red when peaks above 0 dB)
-- [ ] Volume slider animates smoothly on scroll wheel adjustment
+- [x] Waveform visualization for video clips (FFmpeg audio extraction via IPC handler)
+  - [x] Cached to disk after first generation (`{userData}/klip-waveforms/`), not recomputed on every open
+  - [x] Waveform bars appear once data loads (same animated entrance as audio clips)
+- [x] Audio fade in / fade out handles on clip edges — draggable diamond handles; gradient overlay on clip; applied at export via `afade` FFmpeg filter
+- [x] Audio normalization per clip — FFmpeg loudnorm analysis → one-click "Normalize to −18 LUFS" in Volume context menu; async with loading state
+- [x] Audio level meters in the preview panel — Web Audio API AnalyserNode tap on video element, real-time L/R peak display with 8-segment bar meter
+- [x] Clipping indicator (top 1–2 segments flash orange/red when peaks above 0 dB; holds red for 800ms)
+- [ ] Volume slider animates smoothly on scroll wheel adjustment — deferred; low impact vs. effort
 
 ---
 

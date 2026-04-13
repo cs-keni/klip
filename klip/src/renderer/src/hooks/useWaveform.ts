@@ -13,7 +13,9 @@ export const PEAKS_PER_SEC = 150
 const peaksCache  = new Map<string, Float32Array>()
 const pendingReqs = new Map<string, Promise<Float32Array | null>>()
 
-async function computePeaks(filePath: string): Promise<Float32Array | null> {
+// ── Web Audio API path (audio-only files: MP3, WAV, FLAC, AAC) ───────────────
+
+async function computePeaksFromUrl(filePath: string): Promise<Float32Array | null> {
   try {
     const url      = pathToFileUrl(filePath)
     const response = await fetch(url)
@@ -53,22 +55,53 @@ async function computePeaks(filePath: string): Promise<Float32Array | null> {
   }
 }
 
+// ── FFmpeg IPC path (video files: MP4, MKV, MOV) ─────────────────────────────
+
+async function computePeaksFromVideo(clipId: string, filePath: string): Promise<Float32Array | null> {
+  try {
+    const arr = await window.api.waveform.extract(clipId, filePath)
+    if (!arr) return null
+    return Float32Array.from(arr)
+  } catch {
+    return null
+  }
+}
+
+// ── Hook ──────────────────────────────────────────────────────────────────────
+
 /**
  * Generates and caches audio waveform peaks for a media file.
  *
- * Only runs for 'audio' type clips — video waveforms require FFmpeg (Phase 7).
- * Uses a module-level cache so the same file is never decoded twice.
+ * - Audio clips (music library): Web Audio API (fast, browser-native)
+ * - Video clips: FFmpeg via IPC (slower, cached to disk after first run)
+ *
+ * Uses a module-level memory cache so the same file is never decoded twice
+ * within a session. The disk cache (handled in waveformHandlers.ts) persists
+ * peaks across sessions so video waveforms are instant on re-open.
  */
-export function useWaveform(path: string | null, type: string): WaveformState {
+export function useWaveform(
+  path: string | null,
+  type: string,
+  clipId?: string
+): WaveformState {
   const [state, setState] = useState<WaveformState>({ peaks: null, loading: false })
 
   useEffect(() => {
-    if (!path || type !== 'audio') {
+    const isAudio = type === 'audio'
+    const isVideo = type === 'video'
+
+    if (!path || (!isAudio && !isVideo)) {
       setState({ peaks: null, loading: false })
       return
     }
 
-    // Serve from cache immediately
+    // For video clips we need a clipId to key the disk cache
+    if (isVideo && !clipId) {
+      setState({ peaks: null, loading: false })
+      return
+    }
+
+    // Memory cache hit — serve immediately, no loading flicker
     const cached = peaksCache.get(path)
     if (cached) {
       setState({ peaks: cached, loading: false })
@@ -81,7 +114,11 @@ export function useWaveform(path: string | null, type: string): WaveformState {
     // Deduplicate concurrent requests for the same file
     let req = pendingReqs.get(path)
     if (!req) {
-      req = computePeaks(path).then((p) => {
+      const computeFn = isVideo
+        ? computePeaksFromVideo(clipId!, path)
+        : computePeaksFromUrl(path)
+
+      req = computeFn.then((p) => {
         pendingReqs.delete(path)
         if (p) peaksCache.set(path, p)
         return p
@@ -94,7 +131,7 @@ export function useWaveform(path: string | null, type: string): WaveformState {
     })
 
     return () => { cancelled = true }
-  }, [path, type])
+  }, [path, type, clipId])
 
   return state
 }
