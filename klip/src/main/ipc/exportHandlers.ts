@@ -1,5 +1,6 @@
-import { ipcMain, dialog, BrowserWindow, app } from 'electron'
+import { ipcMain, dialog, BrowserWindow, app, Notification, shell } from 'electron'
 import { join } from 'path'
+import { writeFileSync } from 'fs'
 import { runExport, cancelExport, type ExportJob, getFFmpegPath, buildFFmpegArgs } from '../ffmpegExport'
 import { spawn, ChildProcess } from 'child_process'
 
@@ -17,15 +18,56 @@ export function registerExportHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('export:start', async (_, job: ExportJob) => {
     runExport(
       job,
-      (progress) => mainWindow.webContents.send('export:progress', progress),
-      (outputPath) => mainWindow.webContents.send('export:done', outputPath),
-      (message) => mainWindow.webContents.send('export:error', message)
+      (progress) => {
+        mainWindow.webContents.send('export:progress', progress)
+        // Update OS taskbar title so the user can track progress when app is minimized
+        const pct = Math.round(progress.progress * 100)
+        mainWindow.setTitle(`Klip — Exporting ${pct}%`)
+      },
+      (outputPath) => {
+        mainWindow.webContents.send('export:done', outputPath)
+        mainWindow.setTitle('Klip')
+        // System notification so the user knows when they're in another window
+        if (Notification.isSupported()) {
+          const filename = outputPath.split(/[\\/]/).pop() ?? outputPath
+          new Notification({
+            title: 'Export complete',
+            body: `${filename} is ready`,
+            silent: false
+          }).show()
+        }
+      },
+      (message) => {
+        mainWindow.webContents.send('export:error', message)
+        mainWindow.setTitle('Klip')
+      }
     )
   })
 
   // Cancel the running export
   ipcMain.on('export:cancel', () => {
     cancelExport()
+    mainWindow.setTitle('Klip')
+  })
+
+  // Save a video frame (base64 PNG/JPEG data URL) chosen by the user
+  ipcMain.handle('export:save-frame', async (_, dataUrl: string) => {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Save Frame',
+      defaultPath: `frame-${Date.now()}.png`,
+      filters: [{ name: 'Images', extensions: ['png', 'jpg'] }]
+    })
+    if (result.canceled || !result.filePath) return null
+
+    // Strip the data URL header to get the raw base64
+    const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '')
+    writeFileSync(result.filePath, Buffer.from(base64, 'base64'))
+    return result.filePath
+  })
+
+  // Reveal a completed export in Explorer (called from Done state)
+  ipcMain.on('export:reveal', (_, filePath: string) => {
+    shell.showItemInFolder(filePath)
   })
 
   // ── Quick Render Preview ────────────────────────────────────────────────

@@ -45,6 +45,33 @@ export default function PreviewPanel(): JSX.Element {
   const thumbGenRef                 = useRef(0)
   const scrubBarRef                 = useRef<HTMLDivElement>(null)
 
+  // ── Save frame context menu ───────────────────────────────────────────────
+  const [frameMenu, setFrameMenu] = useState<{ x: number; y: number } | null>(null)
+
+  const handleSaveFrame = useCallback(async () => {
+    setFrameMenu(null)
+    const video = videoRef.current
+    if (!video || !activeMediaClip || activeMediaClip.type !== 'video') return
+    try {
+      const canvas = document.createElement('canvas')
+      canvas.width  = video.videoWidth  || 1920
+      canvas.height = video.videoHeight || 1080
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+      ctx.drawImage(video, 0, 0)
+      const dataUrl = canvas.toDataURL('image/png')
+      await window.api.export.saveFrame(dataUrl)
+    } catch { /* user cancelled or CORS */ }
+  }, [activeMediaClip])
+
+  // Close frame menu on outside click
+  useEffect(() => {
+    if (!frameMenu) return
+    const close = () => setFrameMenu(null)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [frameMenu])
+
   // ── Panel ref for fullscreen ──────────────────────────────────────────────
   const panelRef = useRef<HTMLDivElement>(null)
 
@@ -983,7 +1010,14 @@ export default function PreviewPanel(): JSX.Element {
       </div>
 
       {/* Canvas */}
-      <div className="flex-1 min-h-0 relative bg-black flex items-center justify-center overflow-hidden">
+      <div
+        className="flex-1 min-h-0 relative bg-black flex items-center justify-center overflow-hidden"
+        onContextMenu={(e) => {
+          if (!activeMediaClip || activeMediaClip.type !== 'video') return
+          e.preventDefault()
+          setFrameMenu({ x: e.clientX, y: e.clientY })
+        }}
+      >
 
         {/* ── Quick Render Preview overlay ────────────────────────────── */}
         <AnimatePresence>
@@ -1411,6 +1445,29 @@ export default function PreviewPanel(): JSX.Element {
                   </Tooltip>
                 </div>
               </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ── Save frame context menu ───────────────────────────────────── */}
+        <AnimatePresence>
+          {frameMenu && (
+            <motion.div
+              key="frame-menu"
+              className="fixed z-[9999] bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg shadow-xl overflow-hidden py-1 min-w-[160px]"
+              style={{ left: frameMenu.x, top: frameMenu.y }}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.08 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={handleSaveFrame}
+                className="w-full text-left px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-white/10 hover:text-[var(--text-primary)] transition-colors"
+              >
+                Save Frame as PNG…
+              </button>
             </motion.div>
           )}
         </AnimatePresence>

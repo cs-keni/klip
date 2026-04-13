@@ -41,6 +41,7 @@ interface Window {
       onQuickPreviewProgress: (cb: (p: { progress: number; speed: string }) => void) => (() => void)
       onQuickPreviewDone: (cb: (filePath: string) => void) => (() => void)
       onQuickPreviewError: (cb: (message: string) => void) => (() => void)
+      saveFrame: (dataUrl: string) => Promise<string | null>
     }
   }
 }

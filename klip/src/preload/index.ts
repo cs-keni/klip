@@ -115,7 +115,14 @@ const api = {
       const handler = (_: unknown, p: unknown) => cb(p as string)
       ipcRenderer.on('export:quick-preview-error', handler)
       return () => ipcRenderer.removeListener('export:quick-preview-error', handler)
-    }
+    },
+
+    /**
+     * Show a Save dialog and write a frame image to disk.
+     * Pass a data URL (PNG or JPEG). Returns the saved path or null if cancelled.
+     */
+    saveFrame: (dataUrl: string): Promise<string | null> =>
+      ipcRenderer.invoke('export:save-frame', dataUrl)
   }
 }
 

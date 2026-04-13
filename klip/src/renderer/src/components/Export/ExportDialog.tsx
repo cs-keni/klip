@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, FolderOpen, Play, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
+import { X, FolderOpen, Play, CheckCircle2, AlertCircle, Loader2, Clock, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatDuration } from '@/lib/mediaUtils'
 import { useTimelineStore } from '@/stores/timelineStore'
@@ -36,6 +36,13 @@ const PRESETS: Preset[] = [
     crf: 18, x264Preset: 'fast', audioBitrate: '320k'
   },
   {
+    id: 'yt-4k-30',
+    label: 'YouTube 4K',
+    sub: '3840 × 2160 · 30fps · H.264 CRF 18',
+    width: 3840, height: 2160, fps: 30,
+    crf: 18, x264Preset: 'fast', audioBitrate: '320k'
+  },
+  {
     id: 'yt-1080-30',
     label: 'YouTube 1080p30',
     sub: '1920 × 1080 · 30fps · H.264 CRF 18',
@@ -50,6 +57,45 @@ const PRESETS: Preset[] = [
     crf: 28, x264Preset: 'veryfast', audioBitrate: '192k'
   }
 ]
+
+// ── Export history ─────────────────────────────────────────────────────────────
+
+const HISTORY_KEY   = 'klip-export-history'
+const SETTINGS_KEY  = 'klip-export-settings'
+const MAX_HISTORY   = 10
+
+interface HistoryEntry {
+  id: string
+  outputPath: string
+  presetLabel: string
+  totalDuration: number
+  timestamp: number
+}
+
+function loadHistory(): HistoryEntry[] {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]') } catch { return [] }
+}
+
+function saveHistory(entries: HistoryEntry[]): void {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(0, MAX_HISTORY)))
+}
+
+function pushHistory(entry: HistoryEntry): void {
+  const existing = loadHistory().filter((e) => e.id !== entry.id)
+  saveHistory([entry, ...existing])
+}
+
+// ── Saved settings ─────────────────────────────────────────────────────────────
+
+interface SavedSettings {
+  outputFolder: string
+  fileName: string
+  presetId: string
+}
+
+function loadSettings(): Partial<SavedSettings> {
+  try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') } catch { return {} }
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -73,16 +119,24 @@ export default function ExportDialog({ onClose }: ExportDialogProps): JSX.Elemen
   const { clips: mediaClips } = useMediaStore()
 
   // ── Settings state ──────────────────────────────────────────────────────────
-  const [presetId, setPresetId]         = useState('yt-1080-60')
-  const [outputFolder, setOutputFolder] = useState('')
-  const [fileName, setFileName]         = useState('my-edit')
+  const saved = loadSettings()
+  const [presetId, setPresetId]         = useState(saved.presetId ?? 'yt-1080-60')
+  const [outputFolder, setOutputFolder] = useState(saved.outputFolder ?? '')
+  const [fileName, setFileName]         = useState(saved.fileName ?? 'my-edit')
   const [dialogState, setDialogState]   = useState<DialogState>('idle')
   const [progress, setProgress]         = useState<ExportProgress | null>(null)
   const [errorMsg, setErrorMsg]         = useState('')
   const [doneOutput, setDoneOutput]     = useState('')
+  const [history, setHistory]           = useState<HistoryEntry[]>(loadHistory)
+  const exportIdRef                     = useRef('')
+
+  // Persist settings whenever they change
+  useEffect(() => {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ outputFolder, fileName, presetId }))
+  }, [outputFolder, fileName, presetId])
 
   // Full resolved path shown as preview
-  const sep = outputFolder ? (outputFolder.includes('/') ? '/' : '\\') : '/'
+  const sep = outputFolder ? (outputFolder.includes('/') ? '/' : '\\') : '\\'
   const outputPath = outputFolder
     ? `${outputFolder}${sep}${fileName.replace(/\.mp4$/i, '')}.mp4`
     : ''
@@ -103,19 +157,42 @@ export default function ExportDialog({ onClose }: ExportDialogProps): JSX.Elemen
     (totalDuration * (preset.width * preset.height * preset.fps * 0.07 / 1024 / 1024))
   )
 
+  // ── Update document title during export ────────────────────────────────────
+  useEffect(() => {
+    if (dialogState === 'exporting' && progress) {
+      const pct = Math.round(progress.progress * 100)
+      document.title = `Klip — Exporting ${pct}%`
+    } else if (dialogState === 'done') {
+      document.title = 'Klip'
+    } else if (dialogState !== 'exporting') {
+      document.title = 'Klip'
+    }
+    return () => { document.title = 'Klip' }
+  }, [dialogState, progress])
+
   // ── Subscribe to export events ──────────────────────────────────────────────
   useEffect(() => {
     const unsubProgress = window.api.export.onProgress((p) => setProgress(p))
     const unsubDone     = window.api.export.onDone((path) => {
       setDialogState('done')
       setDoneOutput(path)
+      // Record in history
+      const entry: HistoryEntry = {
+        id: exportIdRef.current,
+        outputPath: path,
+        presetLabel: preset.label,
+        totalDuration,
+        timestamp: Date.now()
+      }
+      pushHistory(entry)
+      setHistory(loadHistory())
     })
     const unsubError    = window.api.export.onError((msg) => {
       setDialogState('error')
       setErrorMsg(msg)
     })
     return () => { unsubProgress(); unsubDone(); unsubError() }
-  }, [])
+  }, [preset.label, totalDuration]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Pick output folder ──────────────────────────────────────────────────────
   const handlePickFolder = useCallback(async () => {
@@ -141,6 +218,8 @@ export default function ExportDialog({ onClose }: ExportDialogProps): JSX.Elemen
     const overlayTrack = tracks.find((t) => t.type === 'overlay')
 
     const { transitions } = useTimelineStore.getState()
+
+    exportIdRef.current = crypto.randomUUID()
 
     const job = {
       outputPath,
@@ -211,7 +290,7 @@ export default function ExportDialog({ onClose }: ExportDialogProps): JSX.Elemen
 
       {/* Dialog */}
       <motion.div
-        className="relative z-10 w-[520px] rounded-2xl bg-[var(--bg-surface)] border border-[var(--border)] shadow-2xl overflow-hidden"
+        className="relative z-10 w-[540px] rounded-2xl bg-[var(--bg-surface)] border border-[var(--border)] shadow-2xl overflow-hidden"
         initial={{ scale: 0.95, y: 8 }}
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.95, y: 8 }}
@@ -247,6 +326,7 @@ export default function ExportDialog({ onClose }: ExportDialogProps): JSX.Elemen
               totalDuration={totalDuration}
               estimatedMB={estimatedMB}
               preset={preset}
+              history={history}
             />
           )}
 
@@ -288,7 +368,8 @@ function IdleContent({
   presetId, setPresetId,
   outputFolder, fileName, setFileName, outputPath,
   onPickFolder, onExport, onClose,
-  videoClipCount, totalDuration, estimatedMB, preset
+  videoClipCount, totalDuration, estimatedMB, preset,
+  history
 }: {
   presetId: string
   setPresetId: (id: string) => void
@@ -303,8 +384,10 @@ function IdleContent({
   totalDuration: number
   estimatedMB: number
   preset: Preset
+  history: HistoryEntry[]
 }): JSX.Element {
   const canExport = videoClipCount > 0 && outputFolder.length > 0 && fileName.trim().length > 0
+  const [showHistory, setShowHistory] = useState(false)
 
   return (
     <motion.div
@@ -404,6 +487,60 @@ function IdleContent({
             </p>
           )}
         </div>
+
+        {/* Export history */}
+        {history.length > 0 && (
+          <div>
+            <button
+              onClick={() => setShowHistory((v) => !v)}
+              className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+            >
+              <Clock size={11} />
+              Recent Exports
+              <ChevronDown
+                size={11}
+                className={cn('transition-transform duration-150', showHistory ? 'rotate-180' : '')}
+              />
+            </button>
+
+            <AnimatePresence>
+              {showHistory && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="overflow-hidden"
+                >
+                  <div className="mt-2 space-y-1">
+                    {history.slice(0, 5).map((entry) => (
+                      <div
+                        key={entry.id}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--bg-base)] group"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] text-[var(--text-secondary)] truncate" title={entry.outputPath}>
+                            {entry.outputPath.split(/[\\/]/).pop()}
+                          </p>
+                          <p className="text-[10px] text-[var(--text-muted)]">
+                            {entry.presetLabel} · {formatDuration(entry.totalDuration)} · {formatTimestampAgo(entry.timestamp)}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => window.api.media.revealInExplorer(entry.outputPath)}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                          title="Show in Explorer"
+                        >
+                          <FolderOpen size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
       </div>
 
       {/* Footer */}
@@ -427,6 +564,33 @@ function IdleContent({
   )
 }
 
+// ── Progress ring ──────────────────────────────────────────────────────────────
+
+const RING_R   = 20
+const RING_C   = 2 * Math.PI * RING_R   // ≈ 125.66
+
+function ProgressRing({ pct }: { pct: number }): JSX.Element {
+  const dash = (pct / 100) * RING_C
+  return (
+    <div className="relative w-16 h-16 shrink-0">
+      <svg viewBox="0 0 48 48" className="w-full h-full -rotate-90">
+        <circle cx="24" cy="24" r={RING_R} fill="none" stroke="var(--bg-overlay)" strokeWidth="4" />
+        <motion.circle
+          cx="24" cy="24" r={RING_R} fill="none"
+          stroke="var(--accent)" strokeWidth="4"
+          strokeLinecap="round"
+          animate={{ strokeDasharray: `${dash} ${RING_C}` }}
+          transition={{ duration: 0.4, ease: 'easeOut' }}
+          strokeDasharray={`0 ${RING_C}`}
+        />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-[11px] font-mono font-semibold text-[var(--accent)]">
+        {pct}%
+      </span>
+    </div>
+  )
+}
+
 function ExportingContent({
   progress, totalDuration, onCancel
 }: {
@@ -434,8 +598,10 @@ function ExportingContent({
   totalDuration: number
   onCancel: () => void
 }): JSX.Element {
-  const pct = progress ? Math.round(progress.progress * 100) : 0
-  const elapsed = progress ? totalDuration * progress.progress / Math.max(0.1, parseFloat(progress.speed)) : 0
+  const pct     = progress ? Math.round(progress.progress * 100) : 0
+  const elapsed = progress && parseFloat(progress.speed) > 0
+    ? totalDuration * progress.progress / parseFloat(progress.speed)
+    : 0
 
   return (
     <motion.div
@@ -443,32 +609,42 @@ function ExportingContent({
       transition={{ duration: 0.1 }}
       className="px-5 py-6 space-y-5"
     >
-      <div className="flex items-center gap-3">
-        <Loader2 size={16} className="text-[var(--accent)] shrink-0 animate-spin" />
-        <span className="text-sm font-medium text-[var(--text-primary)]">Encoding…</span>
-        <span className="ml-auto text-sm font-mono font-semibold text-[var(--accent)]">{pct}%</span>
-      </div>
+      <div className="flex items-center gap-4">
+        <ProgressRing pct={pct} />
 
-      {/* Progress bar */}
-      <div className="h-2 rounded-full bg-[var(--bg-base)] overflow-hidden">
-        <motion.div
-          className="h-full bg-[var(--accent)] rounded-full"
-          animate={{ width: `${pct}%` }}
-          transition={{ duration: 0.3, ease: 'easeOut' }}
-        />
-      </div>
+        <div className="flex-1 space-y-3">
+          <div className="flex items-center gap-2">
+            <Loader2 size={13} className="text-[var(--accent)] shrink-0 animate-spin" />
+            <span className="text-sm font-medium text-[var(--text-primary)]">Encoding…</span>
+          </div>
 
-      {/* Stats */}
-      {progress && (
-        <div className="flex items-center gap-4 text-[10px] text-[var(--text-muted)]">
-          <span>{progress.fps} fps</span>
-          <span>{progress.speed}</span>
-          {progress.etaSecs > 0 && (
-            <span>ETA {formatEta(progress.etaSecs)}</span>
+          {/* Progress bar */}
+          <div className="h-1.5 rounded-full bg-[var(--bg-base)] overflow-hidden">
+            <motion.div
+              className="h-full rounded-full"
+              style={{
+                background: 'linear-gradient(90deg, var(--accent-dim), var(--accent))'
+              }}
+              animate={{ width: `${pct}%` }}
+              transition={{ duration: 0.35, ease: 'easeOut' }}
+            />
+          </div>
+
+          {/* Stats row */}
+          {progress && (
+            <div className="flex items-center gap-3 text-[10px] text-[var(--text-muted)]">
+              <span className="font-mono">{progress.fps} fps</span>
+              <span className="font-mono">{progress.speed}</span>
+              {progress.etaSecs > 0 && (
+                <span>ETA {formatEta(progress.etaSecs)}</span>
+              )}
+              <span className="ml-auto font-mono tabular-nums">
+                {formatDuration(elapsed)} / {formatDuration(totalDuration)}
+              </span>
+            </div>
           )}
-          <span className="ml-auto">{formatDuration(elapsed)} / {formatDuration(totalDuration)}</span>
         </div>
-      )}
+      </div>
 
       <div className="flex justify-end pt-1">
         <button
@@ -496,7 +672,13 @@ function DoneContent({
       className="px-5 py-6 space-y-4"
     >
       <div className="flex flex-col items-center gap-3 py-4 text-center">
-        <CheckCircle2 size={36} className="text-emerald-400" />
+        <motion.div
+          initial={{ scale: 0.5, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 20, delay: 0.05 }}
+        >
+          <CheckCircle2 size={40} className="text-emerald-400" />
+        </motion.div>
         <p className="text-sm font-semibold text-[var(--text-primary)]">Export complete</p>
         <p className="text-xs text-[var(--text-muted)] max-w-xs truncate" title={outputPath}>
           {outputPath}
@@ -579,4 +761,15 @@ function formatEta(secs: number): string {
   const m = Math.floor(secs / 60)
   const s = Math.round(secs % 60)
   return `${m}m ${s}s`
+}
+
+function formatTimestampAgo(ts: number): string {
+  const diff = Date.now() - ts
+  const mins  = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days  = Math.floor(diff / 86400000)
+  if (mins < 1)   return 'just now'
+  if (hours < 1)  return `${mins}m ago`
+  if (days < 1)   return `${hours}h ago`
+  return `${days}d ago`
 }
