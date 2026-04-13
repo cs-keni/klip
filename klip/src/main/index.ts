@@ -8,6 +8,7 @@ import { registerExportHandlers } from './ipc/exportHandlers'
 import { registerProjectHandlers } from './ipc/projectHandlers'
 import { registerProxyHandlers } from './ipc/proxyHandlers'
 import { registerWaveformHandlers } from './ipc/waveformHandlers'
+import { registerSettingsHandlers } from './ipc/settingsHandlers'
 import { registerKlipScheme, registerLocalFileProtocol } from './localFileProtocol'
 
 // Must be called synchronously before app.whenReady()
@@ -78,6 +79,7 @@ function createWindow(): void {
   registerProjectHandlers()
   registerProxyHandlers(mainWindow)
   registerWaveformHandlers()
+  registerSettingsHandlers()
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])

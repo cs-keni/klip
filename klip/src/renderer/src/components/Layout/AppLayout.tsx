@@ -1,7 +1,8 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import { useMediaStore } from '@/stores/mediaStore'
 import { useTimelineStore } from '@/stores/timelineStore'
+import { useUIStore } from '@/stores/uiStore'
 import { useProxyEvents } from '@/hooks/useProxyEvents'
 import Sidebar from './Sidebar'
 import PreviewPanel from './PreviewPanel'
@@ -11,6 +12,8 @@ import ResizeHandle from './ResizeHandle'
 import ExportDialog from '@/components/Export/ExportDialog'
 import SettingsDialog from '@/components/Settings/SettingsDialog'
 import SourceClipViewer from '@/components/MediaBin/SourceClipViewer'
+import CommandPalette from '@/components/CommandPalette/CommandPalette'
+import { useState } from 'react'
 import type { TimelineClip, TextSettings } from '@/types/timeline'
 
 const SIDEBAR_MIN = 180
@@ -38,11 +41,11 @@ const DEFAULT_TEXT_SETTINGS: TextSettings = {
 export default function AppLayout(): JSX.Element {
   const [sidebarWidth, setSidebarWidth]     = useState(SIDEBAR_DEFAULT)
   const [timelineHeight, setTimelineHeight] = useState(TIMELINE_DEFAULT)
-  const [showExport, setShowExport]         = useState(false)
-  const [showSettings, setShowSettings]     = useState(false)
   const { checkMissingFiles } = useMediaStore()
 
   const { tracks, playheadTime, addClip } = useTimelineStore()
+
+  const { showExport, showSettings, setShowExport, setShowSettings } = useUIStore()
 
   // Mount proxy IPC event listeners and check disk for existing proxies
   useProxyEvents()
@@ -65,7 +68,7 @@ export default function AppLayout(): JSX.Element {
     const id = crypto.randomUUID()
     const clip: TimelineClip = {
       id,
-      mediaClipId:  id,           // self-referential — text clips have no media file
+      mediaClipId:  id,
       trackId:      overlayTrack.id,
       startTime:    playheadTime,
       duration:     5,
@@ -77,6 +80,13 @@ export default function AppLayout(): JSX.Element {
     }
     addClip(clip)
   }, [tracks, playheadTime, addClip])
+
+  // Allow the command palette to trigger "add text clip" via a custom event
+  useEffect(() => {
+    const handler = (): void => handleAddTextClip()
+    window.addEventListener('klip:add-text-clip', handler)
+    return () => window.removeEventListener('klip:add-text-clip', handler)
+  }, [handleAddTextClip])
 
   return (
     <div className="flex flex-col h-full bg-[var(--bg-base)]">
@@ -93,6 +103,9 @@ export default function AppLayout(): JSX.Element {
       <AnimatePresence>
         {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
       </AnimatePresence>
+
+      {/* Command palette — portal, always mounted, renders when open */}
+      <CommandPalette />
 
       <SourceClipViewer />
 

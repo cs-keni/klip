@@ -47,6 +47,13 @@ interface Window {
       extract: (clipId: string, filePath: string) => Promise<number[] | null>
       analyzeLoudness: (filePath: string) => Promise<{ inputI: number } | null>
     }
+    settings: {
+      proxyCacheInfo: () => Promise<{ count: number; totalBytes: number }>
+      clearProxyCache: () => Promise<number>
+      getFfmpegPath: () => Promise<string | null>
+      setFfmpegPath: (path: string | null) => Promise<void>
+      pickFfmpegBinary: () => Promise<string | null>
+    }
     proxy: {
       generateProxy: (clipId: string, filePath: string) => void
       cancelProxy: (clipId: string) => void

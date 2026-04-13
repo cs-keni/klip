@@ -1,6 +1,7 @@
 import { spawn, ChildProcess } from 'child_process'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
+import { app } from 'electron'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -95,6 +96,17 @@ export interface ExportProgress {
 // ── FFmpeg binary resolution ───────────────────────────────────────────────────
 
 export function getFFmpegPath(): string {
+  // Check for user-configured custom FFmpeg binary first
+  try {
+    const configPath = join(app.getPath('userData'), 'klip-config.json')
+    if (existsSync(configPath)) {
+      const cfg = JSON.parse(readFileSync(configPath, 'utf8')) as { customFfmpegPath?: string }
+      if (cfg.customFfmpegPath && existsSync(cfg.customFfmpegPath)) {
+        return cfg.customFfmpegPath
+      }
+    }
+  } catch { /* ignore config errors — fall through to bundled FFmpeg */ }
+
   if (process.env.NODE_ENV !== 'development') {
     const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath ?? ''
     for (const name of ['ffmpeg.exe', 'ffmpeg']) {

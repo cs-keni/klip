@@ -3,6 +3,7 @@ import { Minus, Plus, Maximize2, Undo2, Redo2, Magnet, Repeat, Timer } from 'luc
 import { cn } from '@/lib/utils'
 import { formatTimecode } from '@/lib/mediaUtils'
 import { useTimelineStore } from '@/stores/timelineStore'
+import { useCommandPaletteStore } from '@/stores/commandPaletteStore'
 import { toast } from '@/stores/toastStore'
 import { HEADER_WIDTH, TRACK_HEIGHT } from '@/types/timeline'
 import TimelineRuler from './TimelineRuler'
@@ -100,6 +101,13 @@ export default function Timeline(): JSX.Element {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
+      // Command palette — Ctrl+K works everywhere (even inside inputs)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault()
+        useCommandPaletteStore.getState().toggle()
+        return
+      }
+
       const tag = (e.target as HTMLElement).tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
 

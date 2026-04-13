@@ -147,6 +147,28 @@ const api = {
       ipcRenderer.invoke('media:analyze-loudness', { filePath })
   },
 
+  settings: {
+    /** Get proxy cache disk usage. */
+    proxyCacheInfo: (): Promise<{ count: number; totalBytes: number }> =>
+      ipcRenderer.invoke('settings:proxy-cache-info'),
+
+    /** Delete all proxy files. Returns the number deleted. */
+    clearProxyCache: (): Promise<number> =>
+      ipcRenderer.invoke('settings:clear-proxy-cache'),
+
+    /** Return the saved custom FFmpeg binary path, or null. */
+    getFfmpegPath: (): Promise<string | null> =>
+      ipcRenderer.invoke('settings:get-ffmpeg-path'),
+
+    /** Save (or clear) the custom FFmpeg binary path. */
+    setFfmpegPath: (path: string | null): Promise<void> =>
+      ipcRenderer.invoke('settings:set-ffmpeg-path', path),
+
+    /** Open a file picker to select a custom FFmpeg binary. */
+    pickFfmpegBinary: (): Promise<string | null> =>
+      ipcRenderer.invoke('settings:pick-ffmpeg-binary')
+  },
+
   proxy: {
     /** Start proxy generation for a video clip. Progress/done/error arrive via event listeners. */
     generateProxy: (clipId: string, filePath: string): void =>

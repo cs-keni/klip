@@ -388,10 +388,10 @@ Aesthetic: dark, modern, fluid — closer to Figma/Linear than Blender.
 - [ ] Keyboard shortcut cheat sheet — one page, printable, accessible from Help menu
 
 **Settings Panel:**
-- [ ] App settings: theme (dark only for now), default export path, proxy storage location
-- [ ] Timeline settings: default snap behavior, default new track count
-- [ ] Keyboard shortcuts viewer and (eventually) remapper
-- [ ] FFmpeg path override (for users who want to use a system FFmpeg)
+- [x] App settings: theme (dark only for now), default export path, proxy cache management
+- [x] Timeline settings: default snap behavior
+- [x] Keyboard shortcuts viewer (updated with Ctrl+K entry)
+- [x] FFmpeg path override (for users who want to use a system FFmpeg)
 - [ ] Music library folder location setting
 - [ ] Tutorial settings: option to replay the tutorial or reset onboarding state
 
@@ -404,7 +404,7 @@ Aesthetic: dark, modern, fluid — closer to Figma/Linear than Blender.
 - [x] Recent projects on welcome screen (last 5, with thumbnail)
 - [ ] Context menus throughout (right-click on everything that should have one)
 - [x] Tooltip system — hover any button for 300ms to see a label + keyboard shortcut (already built in Phase 6)
-- [ ] Global search / command palette (Ctrl+K) — search clips, effects, settings, actions
+- [x] Global search / command palette (Ctrl+K) — search clips, effects, settings, actions
 - [x] Clip markers — drop a pin on the timeline with a label (M key; double-click to rename, right-click to delete)
 - [x] Timeline ruler format toggle — Timer icon in timeline toolbar switches between seconds and HH:MM:SS:FF timecode
 - [x] Go to next / previous edit — jump playhead to the next/previous clip boundary (↓/↑ arrow keys)

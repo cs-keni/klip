@@ -1,18 +1,25 @@
-import { useState, type ReactNode } from 'react'
+import { useState, useEffect, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, FolderOpen, Sliders, Download, Keyboard } from 'lucide-react'
+import {
+  X, FolderOpen, Sliders, Keyboard, AppWindow, Layers, Wrench,
+  HardDrive, Trash2, CheckCircle2, AlertCircle
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useProjectStore, type Resolution, type FrameRate, type AspectRatio } from '@/stores/projectStore'
 import { useAppSettingsStore } from '@/stores/appSettingsStore'
+import { useTimelineStore } from '@/stores/timelineStore'
+import { toast } from '@/stores/toastStore'
 
 // ── Tab definitions ────────────────────────────────────────────────────────────
 
-type Tab = 'project' | 'export' | 'shortcuts'
+type Tab = 'project' | 'app' | 'timeline' | 'advanced' | 'shortcuts'
 
 const TABS: { id: Tab; label: string; icon: ReactNode }[] = [
   { id: 'project',   label: 'Project',   icon: <Sliders size={14} /> },
-  { id: 'export',    label: 'Export',    icon: <Download size={14} /> },
+  { id: 'app',       label: 'App',       icon: <AppWindow size={14} /> },
+  { id: 'timeline',  label: 'Timeline',  icon: <Layers size={14} /> },
+  { id: 'advanced',  label: 'Advanced',  icon: <Wrench size={14} /> },
   { id: 'shortcuts', label: 'Shortcuts', icon: <Keyboard size={14} /> }
 ]
 
@@ -22,25 +29,25 @@ const SHORTCUT_GROUPS: { heading: string; rows: { label: string; keys: string[] 
   {
     heading: 'Playback',
     rows: [
-      { label: 'Play / Pause',      keys: ['Space'] },
-      { label: 'Play forward',      keys: ['L'] },
-      { label: 'Pause',             keys: ['K'] },
-      { label: 'Seek back 10 s',   keys: ['J'] },
-      { label: 'Step back 1 frame', keys: ['←'] },
-      { label: 'Step forward 1 frame', keys: ['→'] }
+      { label: 'Play / Pause',             keys: ['Space'] },
+      { label: 'Play forward (shuttle)',    keys: ['L'] },
+      { label: 'Pause',                    keys: ['K'] },
+      { label: 'Seek back 10 s',           keys: ['J'] },
+      { label: 'Step back 1 frame',        keys: ['←'] },
+      { label: 'Step forward 1 frame',     keys: ['→'] }
     ]
   },
   {
     heading: 'Timeline',
     rows: [
-      { label: 'Split clip at playhead',    keys: ['S'] },
-      { label: 'Delete selected',           keys: ['Delete'] },
-      { label: 'Ripple delete selected',    keys: ['Shift', 'Delete'] },
-      { label: 'Trim end to playhead',      keys: ['Q'] },
-      { label: 'Trim start to playhead',    keys: ['W'] },
-      { label: 'Drop marker at playhead',   keys: ['M'] },
-      { label: 'Next edit point',           keys: ['↓'] },
-      { label: 'Previous edit point',       keys: ['↑'] },
+      { label: 'Split clip at playhead',   keys: ['S'] },
+      { label: 'Delete selected',          keys: ['Delete'] },
+      { label: 'Ripple delete selected',   keys: ['Shift', 'Delete'] },
+      { label: 'Trim end to playhead',     keys: ['Q'] },
+      { label: 'Trim start to playhead',   keys: ['W'] },
+      { label: 'Drop marker at playhead',  keys: ['M'] },
+      { label: 'Next edit point',          keys: ['↓'] },
+      { label: 'Previous edit point',      keys: ['↑'] },
       { label: 'Zoom to fit',              keys: ['\\'] },
       { label: 'Toggle snap',              keys: ['Ctrl', '\\'] }
     ]
@@ -48,32 +55,33 @@ const SHORTCUT_GROUPS: { heading: string; rows: { label: string; keys: string[] 
   {
     heading: 'Editing',
     rows: [
-      { label: 'Undo',    keys: ['Ctrl', 'Z'] },
-      { label: 'Redo',    keys: ['Ctrl', 'Shift', 'Z'] },
-      { label: 'Copy',    keys: ['Ctrl', 'C'] },
-      { label: 'Paste',   keys: ['Ctrl', 'V'] },
-      { label: 'Save',    keys: ['Ctrl', 'S'] },
-      { label: 'Save As', keys: ['Ctrl', 'Shift', 'S'] }
+      { label: 'Undo',                     keys: ['Ctrl', 'Z'] },
+      { label: 'Redo',                     keys: ['Ctrl', 'Shift', 'Z'] },
+      { label: 'Copy',                     keys: ['Ctrl', 'C'] },
+      { label: 'Paste',                    keys: ['Ctrl', 'V'] },
+      { label: 'Save',                     keys: ['Ctrl', 'S'] },
+      { label: 'Save As',                  keys: ['Ctrl', 'Shift', 'S'] },
+      { label: 'Command Palette',          keys: ['Ctrl', 'K'] }
     ]
   },
   {
     heading: 'Loop',
     rows: [
-      { label: 'Set loop in',    keys: ['I'] },
-      { label: 'Set loop out',   keys: ['O'] },
-      { label: 'Toggle loop',    keys: ['Ctrl', 'L'] },
-      { label: 'Clear loop',     keys: ['Esc'] }
+      { label: 'Set loop in',              keys: ['I'] },
+      { label: 'Set loop out',             keys: ['O'] },
+      { label: 'Toggle loop',              keys: ['Ctrl', 'L'] },
+      { label: 'Clear loop',               keys: ['Esc'] }
     ]
   },
   {
     heading: 'Source Viewer',
     rows: [
-      { label: 'Play / Pause',     keys: ['Space'] },
-      { label: 'Set in-point',     keys: ['I'] },
-      { label: 'Set out-point',    keys: ['O'] },
-      { label: 'Step back 1 frame', keys: ['←'] },
-      { label: 'Step forward 1 frame', keys: ['→'] },
-      { label: 'Close',            keys: ['Esc'] }
+      { label: 'Play / Pause',             keys: ['Space'] },
+      { label: 'Set in-point',             keys: ['I'] },
+      { label: 'Set out-point',            keys: ['O'] },
+      { label: 'Step back 1 frame',        keys: ['←'] },
+      { label: 'Step forward 1 frame',     keys: ['→'] },
+      { label: 'Close',                    keys: ['Esc'] }
     ]
   }
 ]
@@ -103,7 +111,7 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps): JSX.El
 
       {/* Panel */}
       <motion.div
-        className="relative z-10 flex w-[620px] max-h-[80vh] rounded-xl overflow-hidden border border-[var(--border)] bg-[var(--bg-surface)] shadow-2xl"
+        className="relative z-10 flex w-[660px] max-h-[82vh] rounded-xl overflow-hidden border border-[var(--border)] bg-[var(--bg-surface)] shadow-2xl"
         initial={{ scale: 0.96, opacity: 0, y: 8 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.96, opacity: 0, y: 8 }}
@@ -149,15 +157,11 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps): JSX.El
           {/* Tab content */}
           <div className="flex-1 overflow-y-auto px-5 py-5">
             <AnimatePresence mode="wait" initial={false}>
-              {activeTab === 'project' && (
-                <TabPane key="project"><ProjectTab /></TabPane>
-              )}
-              {activeTab === 'export' && (
-                <TabPane key="export"><ExportTab /></TabPane>
-              )}
-              {activeTab === 'shortcuts' && (
-                <TabPane key="shortcuts"><ShortcutsTab /></TabPane>
-              )}
+              {activeTab === 'project'   && <TabPane key="project"><ProjectTab /></TabPane>}
+              {activeTab === 'app'       && <TabPane key="app"><AppTab /></TabPane>}
+              {activeTab === 'timeline'  && <TabPane key="timeline"><TimelineTab /></TabPane>}
+              {activeTab === 'advanced'  && <TabPane key="advanced"><AdvancedTab /></TabPane>}
+              {activeTab === 'shortcuts' && <TabPane key="shortcuts"><ShortcutsTab /></TabPane>}
             </AnimatePresence>
           </div>
         </div>
@@ -246,18 +250,46 @@ function ProjectTab(): JSX.Element {
   )
 }
 
-// ── Export tab ─────────────────────────────────────────────────────────────────
+// ── App tab ────────────────────────────────────────────────────────────────────
 
-function ExportTab(): JSX.Element {
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+}
+
+function AppTab(): JSX.Element {
   const { defaultExportFolder, setDefaultExportFolder } = useAppSettingsStore()
+  const [cacheInfo, setCacheInfo] = useState<{ count: number; totalBytes: number } | null>(null)
+  const [clearing, setClearing] = useState(false)
+
+  useEffect(() => {
+    window.api.settings.proxyCacheInfo().then(setCacheInfo)
+  }, [])
 
   async function handlePickFolder(): Promise<void> {
     const folder = await window.api.export.pickOutputFolder()
     if (folder) setDefaultExportFolder(folder)
   }
 
+  async function handleClearCache(): Promise<void> {
+    setClearing(true)
+    const count = await window.api.settings.clearProxyCache()
+    setCacheInfo({ count: 0, totalBytes: 0 })
+    setClearing(false)
+    toast(
+      count > 0
+        ? `Cleared ${count} proxy file${count !== 1 ? 's' : ''}`
+        : 'No proxy files to clear',
+      'success'
+    )
+  }
+
   return (
     <>
+      {/* Default export folder */}
       <SettingRow
         label="Default Output Folder"
         description="Pre-filled in the Export dialog. You can change it per-export."
@@ -286,6 +318,170 @@ function ExportTab(): JSX.Element {
           )}
         </div>
       </SettingRow>
+
+      {/* Proxy cache management */}
+      <SettingRow
+        label="Proxy Cache"
+        description="Low-res preview files generated to speed up timeline playback. Safe to clear — they'll regenerate automatically on next import."
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex-1 flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-[var(--bg-base)] border border-[var(--border)]">
+            <HardDrive size={12} className="text-[var(--text-muted)] shrink-0" />
+            <span className="text-xs text-[var(--text-secondary)]">
+              {cacheInfo == null
+                ? 'Calculating…'
+                : cacheInfo.count === 0
+                  ? 'No proxy files on disk'
+                  : `${cacheInfo.count} file${cacheInfo.count !== 1 ? 's' : ''} · ${formatBytes(cacheInfo.totalBytes)}`
+              }
+            </span>
+          </div>
+          <button
+            onClick={handleClearCache}
+            disabled={clearing || cacheInfo == null || cacheInfo.count === 0}
+            className={cn(
+              'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium shrink-0 transition-all duration-100 active:scale-[0.97]',
+              'border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-secondary)]',
+              'hover:border-red-800 hover:bg-red-950/40 hover:text-red-400',
+              'disabled:opacity-40 disabled:pointer-events-none'
+            )}
+          >
+            <Trash2 size={12} />
+            {clearing ? 'Clearing…' : 'Clear Cache'}
+          </button>
+        </div>
+      </SettingRow>
+
+      {/* Theme (read-only for now) */}
+      <SettingRow
+        label="Theme"
+        description="Interface color scheme"
+      >
+        <div className="flex gap-1 p-1 rounded-lg bg-[var(--bg-base)] border border-[var(--border-subtle)]">
+          <div className="flex-1 py-1.5 rounded-md text-xs font-medium text-center bg-[var(--accent)] text-white shadow-sm">
+            Dark
+          </div>
+          <div className="flex-1 py-1.5 rounded-md text-xs font-medium text-center text-[var(--text-disabled)] cursor-not-allowed">
+            Light
+          </div>
+          <div className="flex-1 py-1.5 rounded-md text-xs font-medium text-center text-[var(--text-disabled)] cursor-not-allowed">
+            System
+          </div>
+        </div>
+        <p className="text-[11px] text-[var(--text-muted)]">Light and System themes coming in a future update.</p>
+      </SettingRow>
+    </>
+  )
+}
+
+// ── Timeline tab ───────────────────────────────────────────────────────────────
+
+function TimelineTab(): JSX.Element {
+  const { setSnapByDefault } = useAppSettingsStore()
+  const { snapEnabled, toggleSnap } = useTimelineStore()
+
+  function handleSnapToggle(v: boolean): void {
+    setSnapByDefault(v)
+    if (v !== snapEnabled) toggleSnap()
+  }
+
+  return (
+    <>
+      <SettingRow
+        label="Snap to Clip Edges"
+        description="Clips magnetize to nearby clip edges and the playhead while dragging. Can also be toggled with Ctrl+\\ at any time."
+      >
+        <Toggle checked={snapEnabled} onChange={handleSnapToggle} />
+      </SettingRow>
+
+      <div className="rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-subtle)] px-3.5 py-2.5">
+        <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+          Snap state changes here also update the current session. This setting is saved as the
+          default for all future sessions.
+        </p>
+      </div>
+    </>
+  )
+}
+
+// ── Advanced tab ───────────────────────────────────────────────────────────────
+
+function AdvancedTab(): JSX.Element {
+  const [customPath, setCustomPath] = useState<string | null | undefined>(undefined)
+  const [testStatus, setTestStatus] = useState<'idle' | 'ok' | 'fail'>('idle')
+
+  useEffect(() => {
+    window.api.settings.getFfmpegPath().then((p) => {
+      setCustomPath(p)
+    })
+  }, [])
+
+  async function handlePickBinary(): Promise<void> {
+    const p = await window.api.settings.pickFfmpegBinary()
+    if (!p) return
+    await window.api.settings.setFfmpegPath(p)
+    setCustomPath(p)
+    setTestStatus('idle')
+    toast('Custom FFmpeg path saved. Restart the app to apply.', 'success', 5000)
+  }
+
+  async function handleClearBinary(): Promise<void> {
+    await window.api.settings.setFfmpegPath(null)
+    setCustomPath(null)
+    setTestStatus('idle')
+    toast('Reverted to bundled FFmpeg. Restart to apply.', 'info', 4000)
+  }
+
+  const isLoading = customPath === undefined
+
+  return (
+    <>
+      <SettingRow
+        label="Custom FFmpeg Binary"
+        description="Override the bundled FFmpeg with a system installation. Useful for newer codec support or hardware acceleration."
+      >
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <div className="flex-1 min-w-0 flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-[var(--bg-base)] border border-[var(--border)]">
+              {testStatus === 'ok' && <CheckCircle2 size={12} className="text-[var(--success)] shrink-0" />}
+              {testStatus === 'fail' && <AlertCircle size={12} className="text-[var(--destructive)] shrink-0" />}
+              <span className="text-xs text-[var(--text-muted)] truncate font-mono">
+                {isLoading
+                  ? 'Loading…'
+                  : customPath
+                    ? customPath
+                    : 'Using bundled FFmpeg (default)'
+                }
+              </span>
+            </div>
+            <button
+              onClick={handlePickBinary}
+              disabled={isLoading}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] transition-colors duration-100 shrink-0 active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none"
+            >
+              <FolderOpen size={12} />
+              Browse…
+            </button>
+            {customPath && (
+              <button
+                onClick={handleClearBinary}
+                className="p-1.5 rounded text-[var(--text-muted)] hover:text-[var(--destructive)] hover:bg-red-950/30 transition-colors duration-100"
+                title="Clear custom path"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        </div>
+      </SettingRow>
+
+      <div className="rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-subtle)] px-3.5 py-2.5">
+        <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+          <strong className="text-[var(--text-secondary)]">Note:</strong> Changes take effect after restarting Klip.
+          The custom binary is used for all encoding, proxy generation, and waveform extraction.
+          Ensure the selected binary is compatible with your system (x64 Windows).
+        </p>
+      </div>
     </>
   )
 }
@@ -380,5 +576,32 @@ function SegmentedControl<T extends string | number>({
         </button>
       ))}
     </div>
+  )
+}
+
+function Toggle({
+  checked,
+  onChange
+}: {
+  checked: boolean
+  onChange: (v: boolean) => void
+}): JSX.Element {
+  return (
+    <button
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={cn(
+        'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 focus-visible:outline-none',
+        checked ? 'bg-[var(--accent)]' : 'bg-[var(--bg-overlay)] border border-[var(--border-strong)]'
+      )}
+    >
+      <span
+        className={cn(
+          'pointer-events-none block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform duration-200',
+          checked ? 'translate-x-[18px]' : 'translate-x-[3px]'
+        )}
+      />
+    </button>
   )
 }
