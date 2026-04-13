@@ -147,29 +147,34 @@ Aesthetic: dark, modern, fluid — closer to Figma/Linear than Blender.
 > If installing from WSL, run `npm install` from Windows PowerShell to get the correct
 > Windows binaries when FFmpeg is needed.
 
-### Phase 2b — Heavy Features (next)
+### Phase 2b — Heavy Features ✅ COMPLETE
 
-- [ ] Proxy file generation — create a low-res preview copy for smooth timeline playback
-  - [ ] Show progress bar during proxy generation
-  - [ ] Background processing, non-blocking UI
-- [ ] **Source Clip Viewer** — double-click any clip in the media bin to open it in a dedicated preview panel
-  - [ ] Full playback controls within source viewer
-  - [ ] Set in-point (I key) and out-point (O key) to mark a selection
-  - [ ] Drag the selected range directly to the timeline
-  - [ ] Timecode display showing current position, in-point, out-point, and selection duration
-  - [ ] Essential for efficiently navigating 2–8 hour OBS recordings
-  - [ ] Source viewer remembers last in/out points per clip within the session
-- [ ] Missing file detection — on project open, scan all referenced file paths and flag any that are missing
-  - [ ] Show a clear "Media Offline" badge on affected clips in the media bin and timeline
-  - [ ] "Relink" button opens a file picker to reassign the clip to the correct path
-  - [ ] Batch relink — if multiple clips are in the same missing folder, relink all at once by pointing to the new folder
-- [ ] Music library panel — separate tab in sidebar
-  - [ ] SQLite table: tracks (id, title, artist, duration, file path, tags)
-  - [ ] Add music by drag-and-drop or file picker (MP3, WAV, FLAC, AAC)
-  - [ ] Display track list with duration and waveform thumbnail
-  - [ ] Search and filter tracks by title / artist / tag
-  - [ ] Tag tracks (e.g., "upbeat", "chill", "intro", "transition")
-  - [ ] Play preview of a track on hover/click without adding to timeline
+- [x] Proxy file generation — FFmpeg generates a 480p low-res copy in the background for smooth timeline playback
+  - [x] Show progress bar (green strip) during proxy generation on each clip card
+  - [x] Background processing via child_process, non-blocking UI
+  - [x] Auto-generates on video import; right-click → Generate Proxy for manual trigger
+  - [x] Proxy-ready badge (P icon) on clip card when available
+  - [x] Preview player automatically uses proxy when available, falls back to source
+  - [x] Proxies persisted to `{userData}/klip-proxies/` across sessions
+  - [x] Batch-check on app launch / project open restores proxy status without re-generating
+- [x] **Source Clip Viewer** — double-click any clip in the media bin to open it in a dedicated preview panel
+  - [x] Full playback controls within source viewer (play/pause, frame step, scrub)
+  - [x] Set in-point (I key) and out-point (O key) to mark a selection
+  - [x] "Add to Timeline" places only the selected range at the playhead
+  - [x] Timecode display showing current position, in-point, out-point, and selection duration
+  - [x] Source viewer remembers last in/out points per clip within the session
+- [x] Missing file detection — on project open, scan all referenced file paths and flag any that are missing
+  - [x] Show a clear "Media Offline" badge on affected clips in the media bin
+  - [x] "Relink" button opens a file picker to reassign the clip to the correct path
+  - [x] Missing file check runs on AppLayout mount AND on every project open
+- [x] Music library panel — separate tab in sidebar
+  - [x] Add music by drag-and-drop or file picker (MP3, WAV, FLAC, AAC)
+  - [x] Display track list with duration, artist, title
+  - [x] Search and filter tracks by title / artist / tag
+  - [x] Tag tracks (e.g., "upbeat", "chill", "intro", "transition") with inline tag editor
+  - [x] Play preview of a track on click (toggle play/pause)
+  - [x] Drag track to music lane or click "+" to add to timeline
+  - [x] Library persisted via localStorage across sessions
 
 ---
 

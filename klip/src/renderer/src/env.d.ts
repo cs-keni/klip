@@ -43,5 +43,15 @@ interface Window {
       onQuickPreviewError: (cb: (message: string) => void) => (() => void)
       saveFrame: (dataUrl: string) => Promise<string | null>
     }
+    proxy: {
+      generateProxy: (clipId: string, filePath: string) => void
+      cancelProxy: (clipId: string) => void
+      cancelAll: () => void
+      checkProxy: (clipId: string) => Promise<string | null>
+      checkProxiesBatch: (clipIds: string[]) => Promise<Record<string, string | null>>
+      onProgress: (cb: (data: { clipId: string; progress: number }) => void) => (() => void)
+      onDone: (cb: (data: { clipId: string; proxyPath: string }) => void) => (() => void)
+      onError: (cb: (data: { clipId: string; error: string }) => void) => (() => void)
+    }
   }
 }

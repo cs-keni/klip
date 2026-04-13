@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { AlertTriangle, CheckCircle2, Film, ImageIcon, Music, WifiOff } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Film, ImageIcon, Music, WifiOff, Cpu } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatDuration, formatResolution } from '@/lib/mediaUtils'
 import { useProjectStore } from '@/stores/projectStore'
@@ -134,6 +134,32 @@ export default function ClipCard({
         {clip.isOnTimeline && !clip.isMissing && (
           <div className="absolute bottom-1.5 right-1.5">
             <CheckCircle2 size={12} className="text-[var(--success)] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
+          </div>
+        )}
+
+        {/* Proxy ready badge — bottom-left */}
+        {clip.proxyStatus === 'ready' && !clip.isMissing && (
+          <div
+            className="absolute bottom-1.5 left-1.5"
+            title="Proxy available — smoother playback"
+          >
+            <div className="flex items-center gap-0.5 px-1 py-0.5 rounded bg-black/60 backdrop-blur-sm">
+              <Cpu size={8} className="text-emerald-400" />
+              <span className="text-[8px] font-semibold text-emerald-400 leading-none">P</span>
+            </div>
+          </div>
+        )}
+
+        {/* Proxy generation progress bar — bottom of thumbnail */}
+        {clip.proxyStatus === 'generating' && !clip.isMissing && (
+          <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-black/40">
+            <motion.div
+              className="h-full bg-emerald-400 origin-left"
+              initial={{ scaleX: 0 }}
+              animate={{ scaleX: clip.proxyProgress ?? 0 }}
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+              style={{ transformOrigin: 'left' }}
+            />
           </div>
         )}
       </div>

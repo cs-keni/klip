@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { Pencil, Trash2, FolderOpen, Link } from 'lucide-react'
+import { Pencil, Trash2, FolderOpen, Link, Cpu, X as XIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { MediaClip } from '@/types/media'
 
@@ -14,6 +14,8 @@ interface ClipContextMenuProps {
   onRemove: () => void
   onReveal: () => void
   onRelink: () => void
+  onGenerateProxy?: () => void
+  onCancelProxy?: () => void
 }
 
 export default function ClipContextMenu({
@@ -24,14 +26,23 @@ export default function ClipContextMenu({
   onRename,
   onRemove,
   onReveal,
-  onRelink
+  onRelink,
+  onGenerateProxy,
+  onCancelProxy
 }: ClipContextMenuProps): JSX.Element {
   const menuRef = useRef<HTMLDivElement>(null)
+
+  const showProxyGenerate =
+    clip.type === 'video' && !clip.isMissing &&
+    clip.proxyStatus !== 'ready' && clip.proxyStatus !== 'generating'
+  const showProxyCancel =
+    clip.type === 'video' && clip.proxyStatus === 'generating'
 
   // Clamp to viewport so the menu never goes off-screen
   const MENU_W = 180
   const extraH = clip.isMissing ? 32 : 0
-  const MENU_H = clip.type === 'color' ? 80 + extraH : 112 + extraH
+  const proxyH = (showProxyGenerate || showProxyCancel) ? 32 : 0
+  const MENU_H = clip.type === 'color' ? 80 + extraH : 112 + extraH + proxyH
   const clampedX = Math.min(x, window.innerWidth - MENU_W - 8)
   const clampedY = Math.min(y, window.innerHeight - MENU_H - 8)
 
@@ -90,6 +101,26 @@ export default function ClipContextMenu({
               onClose()
             }}
             accent
+          />
+        )}
+        {showProxyGenerate && (
+          <MenuItem
+            icon={<Cpu size={13} />}
+            label="Generate Proxy"
+            onClick={() => {
+              onGenerateProxy?.()
+              onClose()
+            }}
+          />
+        )}
+        {showProxyCancel && (
+          <MenuItem
+            icon={<XIcon size={13} />}
+            label="Cancel Proxy"
+            onClick={() => {
+              onCancelProxy?.()
+              onClose()
+            }}
           />
         )}
         <div className="my-1 h-px bg-[var(--border-subtle)]" />

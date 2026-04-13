@@ -123,6 +123,49 @@ const api = {
      */
     saveFrame: (dataUrl: string): Promise<string | null> =>
       ipcRenderer.invoke('export:save-frame', dataUrl)
+  },
+
+  proxy: {
+    /** Start proxy generation for a video clip. Progress/done/error arrive via event listeners. */
+    generateProxy: (clipId: string, filePath: string): void =>
+      ipcRenderer.send('media:generate-proxy', { clipId, filePath }),
+
+    /** Cancel a running proxy generation job. */
+    cancelProxy: (clipId: string): void =>
+      ipcRenderer.send('media:cancel-proxy', clipId),
+
+    /** Cancel all running proxy jobs (used on app close). */
+    cancelAll: (): void =>
+      ipcRenderer.send('media:cancel-all-proxies'),
+
+    /** Check if a proxy file already exists for a clip. Returns path or null. */
+    checkProxy: (clipId: string): Promise<string | null> =>
+      ipcRenderer.invoke('media:check-proxy', clipId),
+
+    /** Batch-check multiple clip IDs. Returns Record<clipId, path | null>. */
+    checkProxiesBatch: (clipIds: string[]): Promise<Record<string, string | null>> =>
+      ipcRenderer.invoke('media:check-proxies-batch', clipIds),
+
+    /** Subscribe to per-clip proxy generation progress (0–1). Returns unsubscribe fn. */
+    onProgress: (cb: (data: { clipId: string; progress: number }) => void): (() => void) => {
+      const handler = (_: unknown, d: unknown) => cb(d as { clipId: string; progress: number })
+      ipcRenderer.on('media:proxy-progress', handler)
+      return () => ipcRenderer.removeListener('media:proxy-progress', handler)
+    },
+
+    /** Subscribe to proxy generation completion. Returns unsubscribe fn. */
+    onDone: (cb: (data: { clipId: string; proxyPath: string }) => void): (() => void) => {
+      const handler = (_: unknown, d: unknown) => cb(d as { clipId: string; proxyPath: string })
+      ipcRenderer.on('media:proxy-done', handler)
+      return () => ipcRenderer.removeListener('media:proxy-done', handler)
+    },
+
+    /** Subscribe to proxy generation errors. Returns unsubscribe fn. */
+    onError: (cb: (data: { clipId: string; error: string }) => void): (() => void) => {
+      const handler = (_: unknown, d: unknown) => cb(d as { clipId: string; error: string })
+      ipcRenderer.on('media:proxy-error', handler)
+      return () => ipcRenderer.removeListener('media:proxy-error', handler)
+    }
   }
 }
 

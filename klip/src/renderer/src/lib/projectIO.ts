@@ -128,5 +128,12 @@ export async function openProject(filePath?: string): Promise<boolean> {
 
   deserializeProject(result.data, result.path)
   useAppStore.getState().setView('editor')
+
+  // Run file-health checks after the store is populated
+  // (These are async and non-blocking — the editor opens immediately)
+  const { checkMissingFiles, checkExistingProxies } = useMediaStore.getState()
+  void checkMissingFiles()
+  void checkExistingProxies()
+
   return true
 }

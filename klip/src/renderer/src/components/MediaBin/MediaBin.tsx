@@ -99,6 +99,17 @@ export default function MediaBin(): JSX.Element {
               thumbnail: media.thumbnail,
               thumbnailStatus: 'ready'
             })
+
+            // Auto-generate proxy for video files in the background
+            if (getMediaTypeFromPath(path) === 'video') {
+              const existingProxy = await window.api.proxy.checkProxy(id)
+              if (existingProxy) {
+                updateClip(id, { proxyPath: existingProxy, proxyStatus: 'ready', proxyProgress: 1 })
+              } else {
+                updateClip(id, { proxyStatus: 'generating', proxyProgress: 0 })
+                window.api.proxy.generateProxy(id, path)
+              }
+            }
           } catch {
             updateClip(id, { thumbnailStatus: 'error' })
           } finally {
@@ -142,6 +153,25 @@ export default function MediaBin(): JSX.Element {
       if (paths.length > 0) await importPaths(paths)
     },
     [importPaths]
+  )
+
+  // ─── Proxy actions ────────────────────────────────────────────────────────────
+
+  const handleGenerateProxy = useCallback(
+    (clip: MediaClip) => {
+      if (clip.type !== 'video' || !clip.path) return
+      updateClip(clip.id, { proxyStatus: 'generating', proxyProgress: 0 })
+      window.api.proxy.generateProxy(clip.id, clip.path)
+    },
+    [updateClip]
+  )
+
+  const handleCancelProxy = useCallback(
+    (clip: MediaClip) => {
+      window.api.proxy.cancelProxy(clip.id)
+      updateClip(clip.id, { proxyStatus: 'none', proxyProgress: 0 })
+    },
+    [updateClip]
   )
 
   // ─── Context menu actions ────────────────────────────────────────────────────
@@ -346,6 +376,8 @@ export default function MediaBin(): JSX.Element {
             }}
             onReveal={() => handleReveal(contextMenu.clip.path)}
             onRelink={() => handleRelink(contextMenu.clip)}
+            onGenerateProxy={() => handleGenerateProxy(contextMenu.clip)}
+            onCancelProxy={() => handleCancelProxy(contextMenu.clip)}
           />
         )}
       </AnimatePresence>

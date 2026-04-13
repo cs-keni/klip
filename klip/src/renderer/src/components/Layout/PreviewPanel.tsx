@@ -203,6 +203,13 @@ export default function PreviewPanel(): JSX.Element {
     return mediaClipsRef.current.find((m) => m.id === tlClip.mediaClipId) ?? null
   }
 
+  /** Returns the best available playback path for a media clip.
+   *  Prefers proxy (smooth 480p) when ready, falls back to source. */
+  function getPlaybackPath(media: { path: string; proxyPath?: string | null; proxyStatus?: string }): string {
+    if (media.proxyStatus === 'ready' && media.proxyPath) return media.proxyPath
+    return media.path
+  }
+
   function cancelRaf() {
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current)
@@ -343,7 +350,7 @@ export default function PreviewPanel(): JSX.Element {
     audio.muted  = isEffectivelyMuted(tlClip.trackId, tracksRef.current)
     audio.volume = tlClip.volume ?? 1
 
-    const url    = pathToFileUrl(media.path)
+    const url    = pathToFileUrl(media.path) // audio: always use source, proxies are video-only
     const seekTo = tlClip.trimStart + (fromTime - tlClip.startTime)
 
     if (currentAudioSrcRef.current !== url) {
@@ -408,7 +415,7 @@ export default function PreviewPanel(): JSX.Element {
       return
     }
 
-    const url        = pathToFileUrl(media.path)
+    const url        = pathToFileUrl(getPlaybackPath(media))
     const seekTo     = tlClip.trimStart + (fromPlayhead - tlClip.startTime) * speed
     const clipEndSrc = tlClip.trimStart + tlClip.duration * speed
 
@@ -542,7 +549,7 @@ export default function PreviewPanel(): JSX.Element {
           // Load the previous clip and continue reversing from its end
           const prevMedia = mediaClipsRef.current.find((m) => m.id === prevClip.mediaClipId)
           if (prevMedia?.type === 'video' && prevMedia.path) {
-            const prevUrl = pathToFileUrl(prevMedia.path)
+            const prevUrl = pathToFileUrl(getPlaybackPath(prevMedia))
             const prevClipEnd = prevClip.trimStart + prevClip.duration * (prevClip.speed ?? 1)
             applyClipEffects(prevClip)
             if (currentSrcRef.current !== prevUrl) {
@@ -690,7 +697,7 @@ export default function PreviewPanel(): JSX.Element {
       if (clip) {
         const media = mediaClipsRef.current.find((m) => m.id === clip.mediaClipId)
         if (media?.type === 'video' && media.path) {
-          const url    = pathToFileUrl(media.path)
+          const url    = pathToFileUrl(getPlaybackPath(media))
           const seekTo = clip.trimStart + (time - clip.startTime) * (clip.speed ?? 1)
           applyClipEffects(clip)
           if (currentSrcRef.current !== url) {
@@ -776,7 +783,7 @@ export default function PreviewPanel(): JSX.Element {
       return
     }
 
-    const url    = pathToFileUrl(activeMediaClip.path)
+    const url    = pathToFileUrl(getPlaybackPath(activeMediaClip))
     const offset = activeTimelineClip.trimStart + (playheadTime - activeTimelineClip.startTime) * (activeTimelineClip.speed ?? 1)
 
     applyClipEffects(activeTimelineClip)
@@ -829,7 +836,7 @@ export default function PreviewPanel(): JSX.Element {
     const tv = thumbVideoRef.current
     if (!tv) return
 
-    const url     = pathToFileUrl(media.path)
+    const url     = pathToFileUrl(getPlaybackPath(media))
     const seekSrc = clip.trimStart + (hoverTime - clip.startTime) * (clip.speed ?? 1)
     const gen     = ++thumbGenRef.current
 

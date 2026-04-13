@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import { useMediaStore } from '@/stores/mediaStore'
 import { useTimelineStore } from '@/stores/timelineStore'
+import { useProxyEvents } from '@/hooks/useProxyEvents'
 import Sidebar from './Sidebar'
 import PreviewPanel from './PreviewPanel'
 import TimelinePanel from './TimelinePanel'
@@ -40,6 +41,9 @@ export default function AppLayout(): JSX.Element {
   const { checkMissingFiles } = useMediaStore()
 
   const { tracks, playheadTime, addClip } = useTimelineStore()
+
+  // Mount proxy IPC event listeners and check disk for existing proxies
+  useProxyEvents()
 
   // On launch, verify that all persisted file paths still exist on disk
   useEffect(() => { checkMissingFiles() }, [checkMissingFiles])
