@@ -56,7 +56,7 @@ export default function TimelineClipView({
     clips, transitions, playheadTime,
     moveClip, trimClip, selectClip, toggleClipInSelection,
     setClipVolume, setClipSpeed, setClipFades, unlinkClip,
-    setTextSettings, setColorSettings, setCropSettings,
+    setTextSettings, setColorSettings, setCropSettings, setClipRole,
     addTransition, removeTransition,
     snapEnabled
   } = useTimelineStore()
@@ -314,6 +314,24 @@ export default function TimelineClipView({
             </div>
           )}
 
+          {/* Intro / Outro role badge */}
+          {clip.role && dispWidth > 48 && (
+            <div
+              className="absolute top-1 left-1 pointer-events-none z-10"
+              title={clip.role === 'intro' ? 'Intro clip' : 'Outro clip'}
+            >
+              <span
+                className="text-[8px] font-bold uppercase tracking-wide px-1 py-0.5 rounded"
+                style={{
+                  background: clip.role === 'intro' ? 'rgba(234,179,8,0.85)' : 'rgba(239,68,68,0.85)',
+                  color: '#fff'
+                }}
+              >
+                {clip.role}
+              </span>
+            </div>
+          )}
+
           {/* Name + duration + badges */}
           {showLabel && (
             <div className="absolute inset-0 flex items-start justify-between px-1.5 pt-1 gap-1 pointer-events-none overflow-hidden">
@@ -448,6 +466,7 @@ export default function TimelineClipView({
             onUnlink={() => unlinkClip(clip.id)}
             onFadeChange={(fi, fo) => setClipFades(clip.id, fi, fo)}
             onNormalize={(v) => setClipVolume(clip.id, v)}
+            onRoleChange={(role) => setClipRole(clip.id, role)}
             mediaPath={mediaClip?.path ?? null}
             onClose={() => setCtxMenu(null)}
           />
@@ -470,7 +489,7 @@ function ClipContextMenu({
   x, y, clip, clips, transitions,
   onVolumeChange, onSpeedChange, onTextChange,
   onColorChange, onCropChange, onAddTransition, onRemoveTransition,
-  onUnlink, onFadeChange, onNormalize, mediaPath, onClose
+  onUnlink, onFadeChange, onNormalize, onRoleChange, mediaPath, onClose
 }: {
   x: number
   y: number
@@ -487,6 +506,7 @@ function ClipContextMenu({
   onUnlink: () => void
   onFadeChange: (fadeIn: number, fadeOut: number) => void
   onNormalize: (volume: number) => void
+  onRoleChange: (role: 'intro' | 'outro' | undefined) => void
   mediaPath: string | null
   onClose: () => void
 }): JSX.Element {
@@ -529,8 +549,9 @@ function ClipContextMenu({
   const colorS    = clip.colorSettings ?? { brightness: 0, contrast: 0, saturation: 0 }
   const cropS     = clip.cropSettings  ?? { zoom: 1, panX: 0, panY: 0 }
   const textS     = clip.textSettings  ?? {
-    content: 'New Text', fontSize: 48, fontColor: '#ffffff', bgColor: 'transparent',
-    bold: false, italic: false, alignment: 'center', positionX: 0.5, positionY: 0.8
+    content: 'New Text', fontSize: 48, fontFamily: 'Arial', fontColor: '#ffffff', bgColor: 'transparent',
+    bold: false, italic: false, alignment: 'center' as const, positionX: 0.5, positionY: 0.8,
+    animationPreset: 'none' as const
   }
 
   const canHaveAudio      = clip.type !== 'text' && clip.type !== 'image' && clip.type !== 'color'
@@ -737,6 +758,24 @@ function ClipContextMenu({
           onToggle={() => toggleSection('crop')}
         >
           <div className="space-y-2">
+            {/* Quick presets */}
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => onCropChange({ zoom: 2.0, panX: 0, panY: 0 })}
+                className="px-2 py-1 rounded text-[10px] font-medium bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors duration-75"
+                title="2× zoom centered — quick punch-in effect"
+              >
+                Punch In
+              </button>
+              {clip.cropSettings && (
+                <button
+                  onClick={() => onCropChange(undefined)}
+                  className="px-2 py-1 rounded text-[10px] font-medium bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-red-400 transition-colors duration-75"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
             <SliderRow
               label="Zoom"
               min={100} max={400} step={5}
@@ -770,14 +809,6 @@ function ClipContextMenu({
                   zero
                 />
               </>
-            )}
-            {clip.cropSettings && (
-              <button
-                onClick={() => onCropChange(undefined)}
-                className="text-[9px] text-[var(--text-muted)] hover:text-red-400 transition-colors"
-              >
-                Reset
-              </button>
             )}
           </div>
         </MenuSection>
@@ -856,12 +887,56 @@ function ClipContextMenu({
           </button>
         </div>
       )}
+
+      {/* ── Intro / Outro designation ─────────────────────────────────────── */}
+      {(clip.type === 'video' || clip.type === 'image' || clip.type === 'color') && (
+        <div className="border-t border-[var(--border-subtle)] py-1">
+          <div className="px-3 pb-1 pt-0.5">
+            <p className="text-[9px] text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Mark as</p>
+            <div className="flex gap-1.5">
+              {(['intro', 'outro'] as const).map((role) => (
+                <button
+                  key={role}
+                  onClick={() => { onRoleChange(clip.role === role ? undefined : role); onClose() }}
+                  className={cn(
+                    'flex-1 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wide transition-colors duration-75',
+                    clip.role === role
+                      ? role === 'intro'
+                        ? 'bg-yellow-500/80 text-white'
+                        : 'bg-red-500/80 text-white'
+                      : 'bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                  )}
+                >
+                  {role}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </motion.div>,
     document.body
   )
 }
 
 // ── Text settings panel ────────────────────────────────────────────────────────
+
+const FONT_FAMILIES = [
+  'Arial', 'Impact', 'Georgia', 'Verdana', 'Trebuchet MS',
+  'Times New Roman', 'Courier New', 'system-ui'
+] as const
+
+const POSITION_PRESETS = [
+  { label: 'Top',         positionX: 0.5, positionY: 0.1  },
+  { label: 'Center',      positionX: 0.5, positionY: 0.5  },
+  { label: 'Lower Third', positionX: 0.5, positionY: 0.85 }
+] as const
+
+const ANIM_PRESETS = [
+  { value: 'none',     label: 'None'     },
+  { value: 'fade-in',  label: 'Fade In'  },
+  { value: 'slide-up', label: 'Slide Up' }
+] as const
 
 function TextSettingsPanel({
   settings, onChange
@@ -879,6 +954,21 @@ function TextSettingsPanel({
         className="w-full bg-[var(--bg-base)] border border-[var(--border-subtle)] rounded px-2 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-dim)] resize-none"
         placeholder="Enter text…"
       />
+
+      {/* Font family */}
+      <div className="flex items-center gap-2">
+        <span className="text-[9px] text-[var(--text-muted)] w-14 shrink-0">Font</span>
+        <select
+          value={settings.fontFamily}
+          onChange={(e) => onChange({ ...settings, fontFamily: e.target.value })}
+          className="flex-1 bg-[var(--bg-base)] border border-[var(--border-subtle)] rounded px-1.5 py-1 text-[10px] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-dim)] cursor-pointer"
+          style={{ fontFamily: settings.fontFamily }}
+        >
+          {FONT_FAMILIES.map((f) => (
+            <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>
+          ))}
+        </select>
+      </div>
 
       {/* Font size */}
       <SliderRow
@@ -963,21 +1053,69 @@ function TextSettingsPanel({
         ))}
       </div>
 
-      {/* Position */}
-      <SliderRow
-        label="Pos X"
-        min={0} max={100} step={1}
-        value={Math.round(settings.positionX * 100)}
-        display={`${Math.round(settings.positionX * 100)}%`}
-        onChange={(v) => onChange({ ...settings, positionX: v / 100 })}
-      />
-      <SliderRow
-        label="Pos Y"
-        min={0} max={100} step={1}
-        value={Math.round(settings.positionY * 100)}
-        display={`${Math.round(settings.positionY * 100)}%`}
-        onChange={(v) => onChange({ ...settings, positionY: v / 100 })}
-      />
+      {/* Position anchor presets */}
+      <div>
+        <p className="text-[9px] text-[var(--text-muted)] mb-1">Position</p>
+        <div className="flex gap-1.5 mb-2">
+          {POSITION_PRESETS.map((preset) => {
+            const active =
+              Math.abs(settings.positionX - preset.positionX) < 0.01 &&
+              Math.abs(settings.positionY - preset.positionY) < 0.01
+            return (
+              <button
+                key={preset.label}
+                onClick={() => onChange({ ...settings, positionX: preset.positionX, positionY: preset.positionY })}
+                className={cn(
+                  'flex-1 px-1 py-1 rounded text-[9px] font-medium transition-colors duration-75',
+                  active
+                    ? 'bg-[var(--accent)] text-white'
+                    : 'bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                )}
+              >
+                {preset.label}
+              </button>
+            )
+          })}
+        </div>
+        <SliderRow
+          label="X"
+          min={0} max={100} step={1}
+          value={Math.round(settings.positionX * 100)}
+          display={`${Math.round(settings.positionX * 100)}%`}
+          onChange={(v) => onChange({ ...settings, positionX: v / 100 })}
+        />
+        <div className="mt-1.5">
+          <SliderRow
+            label="Y"
+            min={0} max={100} step={1}
+            value={Math.round(settings.positionY * 100)}
+            display={`${Math.round(settings.positionY * 100)}%`}
+            onChange={(v) => onChange({ ...settings, positionY: v / 100 })}
+          />
+        </div>
+        <p className="text-[8px] text-[var(--text-muted)] mt-1 opacity-70">Drag text in preview to reposition</p>
+      </div>
+
+      {/* Animation preset */}
+      <div>
+        <p className="text-[9px] text-[var(--text-muted)] mb-1">Animation</p>
+        <div className="flex gap-1.5">
+          {ANIM_PRESETS.map(({ value, label }) => (
+            <button
+              key={value}
+              onClick={() => onChange({ ...settings, animationPreset: value as TextSettings['animationPreset'] })}
+              className={cn(
+                'flex-1 px-1.5 py-1 rounded text-[9px] font-medium transition-colors duration-75',
+                settings.animationPreset === value
+                  ? 'bg-[var(--accent)] text-white'
+                  : 'bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }

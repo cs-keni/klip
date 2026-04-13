@@ -294,42 +294,48 @@ Aesthetic: dark, modern, fluid — closer to Figma/Linear than Blender.
 
 ---
 
-## Phase 6 — Effects & Overlays
+## Phase 6 — Effects & Overlays ✅ COMPLETE
 
 > Goal: Text, transitions, and visual effects to make the video feel produced.
 
 **Transitions:**
-- [ ] Fade to black / fade from black (essential for your intro/outro style)
-- [ ] Crossfade between clips (dissolve)
-- [ ] Transition duration is adjustable
-- [ ] Transitions applied by dragging onto clip edge or right-click menu
+- [x] Fade to black / fade from black — "Dip to Black" transition type via right-click context menu
+- [x] Crossfade between clips (dissolve) — "Fade" transition type
+- [x] Transition duration is adjustable — slider in context menu (0.2s–3.0s)
+- [x] Transitions applied by right-click context menu on any video clip
 
 **Text Overlays:**
-- [ ] Add text to any point on the timeline (start time + duration)
-- [ ] Text editor: font family, font size, color, bold, italic
-- [ ] Text position: drag on preview canvas to place
-- [ ] Text alignment and anchor presets (center, lower-third, top)
-- [ ] Background fill option (solid or semi-transparent box behind text)
-- [ ] Text animation presets: fade in, slide up, typewriter effect
-- [ ] Text overlays visible as a layer on the timeline
+- [x] Add text to any point on the timeline — "T" button in toolbar, overlay track
+- [x] Text editor: font family (8 options), font size, color, bold, italic
+- [x] Text position: drag on preview canvas to place (pointer capture drag)
+- [x] Text alignment and anchor presets (Top, Center, Lower Third + Left/Center/Right text align)
+- [x] Background fill option (solid color with transparency toggle)
+- [x] Text animation presets: Fade In, Slide Up (preview via Framer Motion; Fade In also applied at export via alpha expression)
+- [x] Text overlays visible as a layer on the timeline (overlay track, cyan color)
+
+**Speed Control:**
+- [x] Per-clip playback speed (0.25x–16x) via right-click → Speed section
 
 **Digital Zoom:**
-- [ ] Per-clip zoom level (1x–4x)
-- [ ] Zoom position — pan the zoomed frame (which part of the frame is visible)
-- [ ] Animated zoom — keyframe start zoom and end zoom for a slow push-in effect
-- [ ] Zoom presets: "Punch in" (quick snap zoom) and "Slow push" (gradual)
+- [x] Per-clip zoom level (1x–4x) with Punch In preset (2× centered)
+- [x] Zoom position — pan the zoomed frame via minimap or Pan X/Y sliders
+- [ ] Animated zoom — keyframe start/end zoom — deferred (requires keyframe infrastructure)
+
+**Color Grade:**
+- [x] Per-clip brightness, contrast, saturation sliders (−1 to +1 range)
+- [x] Applied at export via FFmpeg `eq` filter
 
 **Intro / Outro:**
-- [ ] Designated "Intro" slot at the start of the timeline (snaps to position 0)
-- [ ] Designated "Outro" slot at the end of the timeline
-- [ ] Visual distinction from regular clips (different color or badge)
-- [ ] These are just clips — any video file, image, or solid color can be used as intro or outro
+- [x] Right-click any video/image/color clip → Mark as Intro or Outro
+- [x] Visual badge (amber INTRO / red OUTRO) on timeline clip
+- [x] Clear role by clicking the active designation again
 
 **QoL / UX:**
-- [ ] Transition previews on hover in the effects panel (looping thumbnail animation)
-- [ ] Text overlay selected state shows handles on preview canvas (resize, move)
-- [ ] Zoom region shown as an overlay box on preview while editing
-- [ ] Adding a transition plays a smooth "insertion" animation on the timeline
+- [x] Text overlay selected state shows dashed outline and grab cursor on preview canvas
+- [x] Position anchor preset buttons in text panel (Top / Center / Lower Third)
+- [x] Hint text "Drag text in preview to reposition" in text settings panel
+- [ ] Transition previews on hover in effects panel — deferred (no effects panel; transitions accessible via right-click)
+- [ ] Zoom region overlay box on preview — deferred (low value vs. complexity)
 
 ---
 

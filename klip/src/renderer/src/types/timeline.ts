@@ -23,6 +23,7 @@ export interface Track {
 export interface TextSettings {
   content: string
   fontSize: number          // px on a 1080p canvas (e.g. 48)
+  fontFamily: string        // CSS font family name, e.g. 'Arial'
   fontColor: string         // hex, e.g. '#ffffff'
   bgColor: string           // hex or 'transparent'
   bold: boolean
@@ -30,6 +31,7 @@ export interface TextSettings {
   alignment: 'left' | 'center' | 'right'
   positionX: number         // 0–1 (horizontal center of text box)
   positionY: number         // 0–1 (vertical center of text box)
+  animationPreset: 'none' | 'fade-in' | 'slide-up'
 }
 
 export interface ColorSettings {
@@ -73,6 +75,9 @@ export interface TimelineClip {
   thumbnail: string | null
   /** Only present for type === 'color'. */
   color?: string
+
+  /** Designates this clip as the intro or outro of the project. */
+  role?: 'intro' | 'outro'
 
   /** ID of the paired audio/video clip (linked video + audio clips). */
   linkedClipId?: string

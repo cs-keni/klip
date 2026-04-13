@@ -104,6 +104,7 @@ interface TimelineState {
   setTextSettings:  (clipId: string, settings: TextSettings) => void
   setColorSettings: (clipId: string, settings: ColorSettings | undefined) => void
   setCropSettings:  (clipId: string, settings: CropSettings | undefined) => void
+  setClipRole:      (clipId: string, role: 'intro' | 'outro' | undefined) => void
 
   // ── Transitions ───────────────────────────────────────────────────────────
   addTransition:    (t: Transition) => void
@@ -608,6 +609,15 @@ export const useTimelineStore = create<TimelineState>((set) => ({
     set((s) => ({
       clips: s.clips.map((c) =>
         c.id === clipId ? { ...c, cropSettings: settings } : c
+      )
+    })),
+
+  setClipRole: (clipId, role) =>
+    set((s) => ({
+      past: [...s.past.slice(-49), snapshot(s)],
+      future: [],
+      clips: s.clips.map((c) =>
+        c.id === clipId ? { ...c, role } : c
       )
     })),
 

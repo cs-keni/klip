@@ -75,6 +75,9 @@ export default function PreviewPanel(): JSX.Element {
   // ── Panel ref for fullscreen ──────────────────────────────────────────────
   const panelRef = useRef<HTMLDivElement>(null)
 
+  // ── Canvas ref — bounds used for text drag-to-position ────────────────────
+  const canvasRef = useRef<HTMLDivElement>(null)
+
   // ── Speed selector open ───────────────────────────────────────────────────
   const [showSpeedMenu, setShowSpeedMenu] = useState(false)
   const speedMenuRef = useRef<HTMLDivElement>(null)
@@ -96,7 +99,8 @@ export default function PreviewPanel(): JSX.Element {
     shuttleSpeed, setShuttleSpeed,
     loopIn, loopOut, loopEnabled,
     toggleLoop,
-    masterVolume, setMasterVolume
+    masterVolume, setMasterVolume,
+    selectedClipId, setTextSettings
   } = useTimelineStore()
 
   const { clips: mediaClips } = useMediaStore()
@@ -1114,6 +1118,7 @@ export default function PreviewPanel(): JSX.Element {
 
       {/* Canvas */}
       <div
+        ref={canvasRef}
         className="flex-1 min-h-0 relative bg-black flex items-center justify-center overflow-hidden"
         onContextMenu={(e) => {
           if (!activeMediaClip || activeMediaClip.type !== 'video') return
@@ -1247,7 +1252,16 @@ export default function PreviewPanel(): JSX.Element {
         {/* ── Text overlays ──────────────────────────────────────────────── */}
         {activeTextClips.map((clip) => (
           clip.textSettings && (
-            <TextOverlay key={clip.id} settings={clip.textSettings} />
+            <TextOverlay
+              key={clip.id}
+              clipId={clip.id}
+              settings={clip.textSettings}
+              isSelected={clip.id === selectedClipId}
+              canvasRef={canvasRef}
+              onPositionChange={(px, py) =>
+                setTextSettings(clip.id, { ...clip.textSettings!, positionX: px, positionY: py })
+              }
+            />
           )
         ))}
 
@@ -1663,37 +1677,102 @@ export default function PreviewPanel(): JSX.Element {
 
 // ── Text overlay renderer ──────────────────────────────────────────────────────
 
-function TextOverlay({ settings }: { settings: TextSettings }): JSX.Element {
+function TextOverlay({
+  clipId,
+  settings,
+  isSelected,
+  canvasRef,
+  onPositionChange
+}: {
+  clipId: string
+  settings: TextSettings
+  isSelected: boolean
+  canvasRef: React.RefObject<HTMLDivElement>
+  onPositionChange: (positionX: number, positionY: number) => void
+}): JSX.Element {
   const {
-    content, fontSize, fontColor, bgColor,
-    bold, italic, alignment, positionX, positionY
+    content, fontSize, fontFamily, fontColor, bgColor,
+    bold, italic, alignment, positionX, positionY, animationPreset
   } = settings
 
+  const isDragging = useRef(false)
+
+  function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (!isSelected) return
+    e.preventDefault()
+    e.stopPropagation()
+    isDragging.current = true
+    ;(e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId)
+  }
+
+  function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!isDragging.current || !canvasRef.current) return
+    e.preventDefault()
+    const rect = canvasRef.current.getBoundingClientRect()
+    const newX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+    const newY = Math.max(0, Math.min(1, (e.clientY - rect.top)  / rect.height))
+    onPositionChange(newX, newY)
+  }
+
+  function handlePointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    if (!isDragging.current) return
+    isDragging.current = false
+    ;(e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId)
+  }
+
+  const translateX = alignment === 'left' ? '0' : alignment === 'right' ? '-100%' : '-50%'
+
   const style: CSSProperties = {
-    position:  'absolute',
-    left:      `${positionX * 100}%`,
-    top:       `${positionY * 100}%`,
-    transform: alignment === 'left'
-      ? 'translate(0, -50%)'
-      : alignment === 'right'
-        ? 'translate(-100%, -50%)'
-        : 'translate(-50%, -50%)',
-    fontSize:   `${fontSize * 0.056}vw`,   // scale relative to preview width
+    position:   'absolute',
+    left:       `${positionX * 100}%`,
+    top:        `${positionY * 100}%`,
+    transform:  `translate(${translateX}, -50%)`,
+    fontSize:   `${fontSize * 0.056}vw`,
+    fontFamily: fontFamily || 'Arial',
     color:      fontColor,
     fontWeight: bold   ? 'bold'   : 'normal',
     fontStyle:  italic ? 'italic' : 'normal',
     textAlign:  alignment,
     whiteSpace: 'pre-wrap',
-    pointerEvents: 'none',
     userSelect: 'none',
     textShadow: '0 1px 4px rgba(0,0,0,0.8)',
     padding:    bgColor !== 'transparent' ? '4px 10px' : undefined,
     backgroundColor: bgColor !== 'transparent' ? bgColor : undefined,
     borderRadius:    bgColor !== 'transparent' ? '4px' : undefined,
-    lineHeight: 1.2
+    lineHeight: 1.2,
+    cursor:     isSelected ? 'grab' : 'default',
+    pointerEvents: isSelected ? 'auto' : 'none',
+    // Selection indicator: subtle outline when selected
+    outline:    isSelected ? '1px dashed rgba(255,255,255,0.4)' : undefined,
+    outlineOffset: isSelected ? '4px' : undefined,
+    zIndex: 10
   }
 
-  return <div style={style}>{content}</div>
+  // Animation variants based on preset
+  const initial = animationPreset === 'fade-in'
+    ? { opacity: 0 }
+    : animationPreset === 'slide-up'
+      ? { opacity: 0, y: 20 }
+      : { opacity: 1 }
+
+  const animate = animationPreset !== 'none'
+    ? { opacity: 1, y: 0 }
+    : { opacity: 1 }
+
+  return (
+    <motion.div
+      key={clipId}
+      style={style}
+      initial={initial}
+      animate={animate}
+      transition={{ duration: 0.4, ease: 'easeOut' }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+    >
+      {content}
+    </motion.div>
+  )
 }
 
 // ── CSS helpers ────────────────────────────────────────────────────────────────

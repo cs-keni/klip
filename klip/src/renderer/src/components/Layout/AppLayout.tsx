@@ -22,15 +22,17 @@ const TIMELINE_MAX = 520
 const TIMELINE_DEFAULT = 220
 
 const DEFAULT_TEXT_SETTINGS: TextSettings = {
-  content:    'New Text',
-  fontSize:   48,
-  fontColor:  '#ffffff',
-  bgColor:    'transparent',
-  bold:       false,
-  italic:     false,
-  alignment:  'center',
-  positionX:  0.5,
-  positionY:  0.8
+  content:         'New Text',
+  fontSize:        48,
+  fontFamily:      'Arial',
+  fontColor:       '#ffffff',
+  bgColor:         'transparent',
+  bold:            false,
+  italic:          false,
+  alignment:       'center',
+  positionX:       0.5,
+  positionY:       0.8,
+  animationPreset: 'none'
 }
 
 export default function AppLayout(): JSX.Element {

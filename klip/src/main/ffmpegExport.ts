@@ -7,6 +7,7 @@ import { join } from 'path'
 export interface TextSettingsExport {
   content: string
   fontSize: number
+  fontFamily: string
   fontColor: string
   bgColor: string
   bold: boolean
@@ -14,6 +15,7 @@ export interface TextSettingsExport {
   alignment: 'left' | 'center' | 'right'
   positionX: number
   positionY: number
+  animationPreset: 'none' | 'fade-in' | 'slide-up'
 }
 
 export interface ColorSettingsExport {
@@ -393,7 +395,9 @@ export function buildFFmpegArgs(job: ExportJob): string[] {
 
     const scaledSize = Math.round(ts.fontSize * height / 1080)
     const hexColor   = ts.fontColor.replace('#', '')
-    const enableExpr = `between(t,${clip.startTime.toFixed(3)},${(clip.startTime + clip.duration).toFixed(3)})`
+    const clipStart  = clip.startTime
+    const clipEnd    = clipStart + clip.duration
+    const enableExpr = `between(t,${clipStart.toFixed(3)},${clipEnd.toFixed(3)})`
 
     // X position based on alignment
     let xExpr: string
@@ -412,12 +416,21 @@ export function buildFFmpegArgs(job: ExportJob): string[] {
 
     const boldArg   = ts.bold   ? ':bold=1'   : ''
     const italicArg = ts.italic ? ':italic=1' : ''
+    const fontArg   = ts.fontFamily && ts.fontFamily !== 'system-ui'
+      ? `:font='${ts.fontFamily}'`
+      : ''
+
+    // Fade-in animation: alpha ramps from 0→1 over the first 0.5s of the clip
+    const fadeInDur = 0.5
+    const alphaArg  = ts.animationPreset === 'fade-in'
+      ? `:alpha='if(lt(t,${clipStart.toFixed(3)}+${fadeInDur}),(t-${clipStart.toFixed(3)})/${fadeInDur},1)'`
+      : ''
 
     const drawtextFilter =
       `drawtext=text='${escapeDrawtext(ts.content)}'` +
       `:fontsize=${scaledSize}` +
       `:fontcolor=${hexColor}` +
-      `${boldArg}${italicArg}` +
+      `${boldArg}${italicArg}${fontArg}${alphaArg}` +
       `:x=${xExpr}:y=${yExpr}` +
       `:enable='${enableExpr}'` +
       `${boxArgs}`
