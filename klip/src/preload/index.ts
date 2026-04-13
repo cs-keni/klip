@@ -29,7 +29,11 @@ const api = {
 
     /** Reveal a file in Windows Explorer / macOS Finder. */
     revealInExplorer: (filePath: string): void =>
-      ipcRenderer.send('media:reveal-in-explorer', filePath)
+      ipcRenderer.send('media:reveal-in-explorer', filePath),
+
+    /** Open a type-filtered single-file picker for relinking missing media. */
+    pickFile: (type: 'video' | 'audio' | 'image'): Promise<string | null> =>
+      ipcRenderer.invoke('media:pick-file', type)
   },
 
   project: {

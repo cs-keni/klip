@@ -27,6 +27,7 @@ interface Window {
       getFileInfo: (filePath: string) => Promise<{ size: number }>
       checkFilesExist: (filePaths: string[]) => Promise<Record<string, boolean>>
       revealInExplorer: (filePath: string) => void
+      pickFile: (type: 'video' | 'audio' | 'image') => Promise<string | null>
     }
     export: {
       pickOutputFolder: () => Promise<string | null>

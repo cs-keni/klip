@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { Pencil, Trash2, FolderOpen } from 'lucide-react'
+import { Pencil, Trash2, FolderOpen, Link } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { MediaClip } from '@/types/media'
 
@@ -13,6 +13,7 @@ interface ClipContextMenuProps {
   onRename: () => void
   onRemove: () => void
   onReveal: () => void
+  onRelink: () => void
 }
 
 export default function ClipContextMenu({
@@ -22,13 +23,15 @@ export default function ClipContextMenu({
   onClose,
   onRename,
   onRemove,
-  onReveal
+  onReveal,
+  onRelink
 }: ClipContextMenuProps): JSX.Element {
   const menuRef = useRef<HTMLDivElement>(null)
 
   // Clamp to viewport so the menu never goes off-screen
   const MENU_W = 180
-  const MENU_H = clip.type === 'color' ? 80 : 112
+  const extraH = clip.isMissing ? 32 : 0
+  const MENU_H = clip.type === 'color' ? 80 + extraH : 112 + extraH
   const clampedX = Math.min(x, window.innerWidth - MENU_W - 8)
   const clampedY = Math.min(y, window.innerHeight - MENU_H - 8)
 
@@ -68,7 +71,7 @@ export default function ClipContextMenu({
             onClose()
           }}
         />
-        {clip.type !== 'color' && (
+        {clip.type !== 'color' && !clip.isMissing && (
           <MenuItem
             icon={<FolderOpen size={13} />}
             label="Reveal in Explorer"
@@ -76,6 +79,17 @@ export default function ClipContextMenu({
               onReveal()
               onClose()
             }}
+          />
+        )}
+        {clip.isMissing && (
+          <MenuItem
+            icon={<Link size={13} />}
+            label="Relink Media…"
+            onClick={() => {
+              onRelink()
+              onClose()
+            }}
+            accent
           />
         )}
         <div className="my-1 h-px bg-[var(--border-subtle)]" />
@@ -99,12 +113,14 @@ function MenuItem({
   icon,
   label,
   onClick,
-  destructive = false
+  destructive = false,
+  accent = false
 }: {
   icon: ReactNode
   label: string
   onClick: () => void
   destructive?: boolean
+  accent?: boolean
 }): JSX.Element {
   return (
     <button
@@ -114,6 +130,8 @@ function MenuItem({
         'transition-colors duration-75',
         destructive
           ? 'text-[var(--destructive)] hover:bg-red-950/40'
+          : accent
+          ? 'text-[var(--accent-bright)] hover:bg-[var(--accent-dim)]'
           : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]'
       )}
     >

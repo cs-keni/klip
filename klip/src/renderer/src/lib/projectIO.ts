@@ -25,14 +25,29 @@ export function serializeProject(): object {
   const { clips: mediaClips } = useMediaStore.getState()
   const { tracks, clips: timelineClips, transitions } = useTimelineStore.getState()
 
+  // Strip base64 thumbnails — they can be multiple MB and are fully regenerable
+  // from source media when the project is reopened. thumbnailStatus resets to
+  // 'idle' so the app knows to re-generate on next open.
+  const strippedMediaClips = mediaClips.map((c) => ({
+    ...c,
+    thumbnail: null,
+    thumbnailStatus: 'idle' as const
+  }))
+
+  // Strip timeline clip thumbnails too (they mirror the media clip thumbnails)
+  const strippedTimelineClips = timelineClips.map((c) => ({
+    ...c,
+    thumbnail: null
+  }))
+
   return {
     version: 1,
     name: projectName ?? 'Untitled Project',
     savedAt: new Date().toISOString(),
     settings,
-    mediaClips,
+    mediaClips: strippedMediaClips,
     tracks,
-    timelineClips,
+    timelineClips: strippedTimelineClips,
     transitions
   }
 }

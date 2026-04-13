@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { AlertTriangle, CheckCircle2, Film, ImageIcon, Music } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Film, ImageIcon, Music, WifiOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatDuration, formatResolution } from '@/lib/mediaUtils'
 import { useProjectStore } from '@/stores/projectStore'
@@ -85,7 +85,9 @@ export default function ClipCard({
         'group relative rounded-lg overflow-hidden cursor-pointer',
         'border transition-all duration-100',
         'bg-[var(--bg-elevated)]',
-        isSelected
+        clip.isMissing
+          ? 'border-red-800/60 shadow-[0_0_0_1px_rgba(239,68,68,0.2)]'
+          : isSelected
           ? 'border-[var(--accent)] shadow-[0_0_0_1px_var(--accent),0_0_12px_var(--accent-glow)]'
           : 'border-[var(--border-subtle)] hover:border-[var(--accent-dim)] hover:shadow-[0_0_10px_var(--accent-glow)]'
       )}
@@ -97,17 +99,27 @@ export default function ClipCard({
       <div className="relative w-full aspect-video overflow-hidden bg-[var(--bg-base)]">
         <Thumbnail clip={clip} />
 
-        {/* Type badge — top-left */}
-        <div className="absolute top-1.5 left-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-          <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-sm">
-            {clip.type === 'video' && <Film size={10} className="text-white/80" />}
-            {clip.type === 'audio' && <Music size={10} className="text-white/80" />}
-            {clip.type === 'image' && <ImageIcon size={10} className="text-white/80" />}
+        {/* Media Offline overlay */}
+        {clip.isMissing && (
+          <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center gap-1.5">
+            <WifiOff size={16} className="text-red-400" />
+            <span className="text-[10px] font-semibold text-red-400 uppercase tracking-wider">Offline</span>
           </div>
-        </div>
+        )}
+
+        {/* Type badge — top-left */}
+        {!clip.isMissing && (
+          <div className="absolute top-1.5 left-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-sm">
+              {clip.type === 'video' && <Film size={10} className="text-white/80" />}
+              {clip.type === 'audio' && <Music size={10} className="text-white/80" />}
+              {clip.type === 'image' && <ImageIcon size={10} className="text-white/80" />}
+            </div>
+          </div>
+        )}
 
         {/* Mismatch warning — top-right */}
-        {hasMismatch && (
+        {hasMismatch && !clip.isMissing && (
           <div
             className="absolute top-1.5 right-1.5"
             title={`Resolution mismatch: clip is ${formatResolution(clip.width, clip.height)}, project is ${settings.resolution}`}
@@ -119,7 +131,7 @@ export default function ClipCard({
         )}
 
         {/* On-timeline indicator — bottom-right */}
-        {clip.isOnTimeline && (
+        {clip.isOnTimeline && !clip.isMissing && (
           <div className="absolute bottom-1.5 right-1.5">
             <CheckCircle2 size={12} className="text-[var(--success)] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
           </div>
@@ -127,7 +139,7 @@ export default function ClipCard({
       </div>
 
       {/* Info area */}
-      <div className="px-2 py-1.5">
+      <div className={cn('px-2 py-1.5', clip.isMissing && 'opacity-50')}>
         {isRenaming ? (
           <input
             ref={renameRef}

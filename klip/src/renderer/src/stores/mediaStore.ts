@@ -13,6 +13,9 @@ interface MediaState {
   selectClip: (id: string | null) => void
   markOnTimeline: (id: string, onTimeline: boolean) => void
 
+  /** Relink a missing clip to a new file path. Clears isMissing and resets thumbnail. */
+  relinkClip: (id: string, newPath: string) => void
+
   /** Check all file paths against disk and mark isMissing accordingly. */
   checkMissingFiles: () => Promise<void>
 }
@@ -47,6 +50,21 @@ export const useMediaStore = create<MediaState>()(
       markOnTimeline: (id, onTimeline) =>
         set((state) => ({
           clips: state.clips.map((c) => (c.id === id ? { ...c, isOnTimeline: onTimeline } : c))
+        })),
+
+      relinkClip: (id, newPath) =>
+        set((state) => ({
+          clips: state.clips.map((c) =>
+            c.id === id
+              ? {
+                  ...c,
+                  path: newPath,
+                  isMissing: false,
+                  thumbnail: null,
+                  thumbnailStatus: 'generating' as const
+                }
+              : c
+          )
         })),
 
       checkMissingFiles: async () => {

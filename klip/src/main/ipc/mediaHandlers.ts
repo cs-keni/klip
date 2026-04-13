@@ -48,4 +48,24 @@ export function registerMediaHandlers(): void {
   ipcMain.on('media:reveal-in-explorer', (_, filePath: string) => {
     shell.showItemInFolder(filePath)
   })
+
+  // Single-file picker used for relinking missing media
+  ipcMain.handle('media:pick-file', async (_, type: 'video' | 'audio' | 'image') => {
+    const filters: Electron.FileFilter[] = []
+    if (type === 'video') {
+      filters.push({ name: 'Video Files', extensions: ['mp4', 'mkv', 'mov', 'avi', 'webm'] })
+    } else if (type === 'audio') {
+      filters.push({ name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'] })
+    } else {
+      filters.push({ name: 'Image Files', extensions: ['png', 'jpg', 'jpeg', 'webp'] })
+    }
+    filters.push({ name: 'All Files', extensions: ['*'] })
+
+    const result = await dialog.showOpenDialog({
+      title: 'Relink Media File',
+      filters,
+      properties: ['openFile']
+    })
+    return result.canceled ? null : result.filePaths[0]
+  })
 }

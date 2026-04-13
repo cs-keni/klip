@@ -20,7 +20,7 @@ interface ContextMenuState {
 }
 
 export default function MediaBin(): JSX.Element {
-  const { clips, addClip, removeClip, updateClip, renameClip, selectClip, selectedClipId } =
+  const { clips, addClip, removeClip, updateClip, renameClip, relinkClip, selectClip, selectedClipId } =
     useMediaStore()
   const { openClip } = useSourceViewerStore()
   const [dragCounter, setDragCounter] = useState(0)
@@ -155,6 +155,38 @@ export default function MediaBin(): JSX.Element {
   const handleReveal = useCallback((path: string) => {
     window.api.media.revealInExplorer(path)
   }, [])
+
+  const handleRelink = useCallback(
+    async (clip: MediaClip) => {
+      if (clip.type === 'color') return
+      const newPath = await window.api.media.pickFile(
+        clip.type === 'audio' ? 'audio' : clip.type === 'image' ? 'image' : 'video'
+      )
+      if (!newPath) return
+
+      // Optimistically update path + mark as re-generating
+      relinkClip(clip.id, newPath)
+
+      // Re-process metadata and thumbnail from the new file
+      try {
+        const [fileInfo, media] = await Promise.all([
+          window.api.media.getFileInfo(newPath),
+          processMediaFile(newPath)
+        ])
+        updateClip(clip.id, {
+          duration: media.duration,
+          width: media.width,
+          height: media.height,
+          fileSize: fileInfo.size,
+          thumbnail: media.thumbnail,
+          thumbnailStatus: 'ready'
+        })
+      } catch {
+        updateClip(clip.id, { thumbnailStatus: 'error' })
+      }
+    },
+    [relinkClip, updateClip]
+  )
 
   // ─── Color clip creation ─────────────────────────────────────────────────────
 
@@ -313,6 +345,7 @@ export default function MediaBin(): JSX.Element {
               setContextMenu(null)
             }}
             onReveal={() => handleReveal(contextMenu.clip.path)}
+            onRelink={() => handleRelink(contextMenu.clip)}
           />
         )}
       </AnimatePresence>

@@ -1,6 +1,6 @@
 import { ipcMain, dialog, app } from 'electron'
 import { readFile, writeFile, mkdir } from 'fs/promises'
-import { join, dirname } from 'path'
+import { join, dirname, relative, resolve, isAbsolute } from 'path'
 
 const RECENT_FILE = join(app.getPath('userData'), 'recent-projects.json')
 const MAX_RECENT = 10
@@ -31,6 +31,41 @@ async function pushRecent(entry: RecentProject): Promise<void> {
   }
 }
 
+// ── Path helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * Rewrite absolute media paths to paths relative to the project file.
+ * Empty paths (color clips) and already-relative paths are left alone.
+ * This makes projects portable: move the folder and all relative paths still resolve.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function relativizePaths(data: any, projectDir: string): any {
+  if (!Array.isArray(data.mediaClips)) return data
+  return {
+    ...data,
+    mediaClips: data.mediaClips.map((clip: any) => {
+      if (!clip.path || !isAbsolute(clip.path)) return clip
+      return { ...clip, path: relative(projectDir, clip.path) }
+    })
+  }
+}
+
+/**
+ * Resolve relative media paths back to absolute paths using the project file's
+ * directory as the base. Already-absolute paths are untouched.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function resolvePaths(data: any, projectDir: string): any {
+  if (!Array.isArray(data.mediaClips)) return data
+  return {
+    ...data,
+    mediaClips: data.mediaClips.map((clip: any) => {
+      if (!clip.path || isAbsolute(clip.path)) return clip
+      return { ...clip, path: resolve(projectDir, clip.path) }
+    })
+  }
+}
+
 export function registerProjectHandlers(): void {
   // ── Get recent projects ────────────────────────────────────────────────────
   ipcMain.handle('project:get-recent', async () => {
@@ -54,8 +89,10 @@ export function registerProjectHandlers(): void {
       }
 
       try {
-        await mkdir(dirname(savePath), { recursive: true })
-        await writeFile(savePath, JSON.stringify(data, null, 2), 'utf-8')
+        const projectDir = dirname(savePath)
+        const portable = relativizePaths(data, projectDir)
+        await mkdir(projectDir, { recursive: true })
+        await writeFile(savePath, JSON.stringify(portable, null, 2), 'utf-8')
         const d = data as { name?: string }
         await pushRecent({
           name: d.name ?? 'Untitled Project',
@@ -80,8 +117,10 @@ export function registerProjectHandlers(): void {
 
     const savePath = result.filePath
     try {
-      await mkdir(dirname(savePath), { recursive: true })
-      await writeFile(savePath, JSON.stringify(data, null, 2), 'utf-8')
+      const projectDir = dirname(savePath)
+      const portable = relativizePaths(data, projectDir)
+      await mkdir(projectDir, { recursive: true })
+      await writeFile(savePath, JSON.stringify(portable, null, 2), 'utf-8')
       const d = data as { name?: string }
       await pushRecent({
         name: d.name ?? 'Untitled Project',
@@ -110,7 +149,8 @@ export function registerProjectHandlers(): void {
 
     try {
       const raw = await readFile(openPath, 'utf-8')
-      const data = JSON.parse(raw)
+      const parsed = JSON.parse(raw)
+      const data = resolvePaths(parsed, dirname(openPath))
       await pushRecent({
         name: data.name ?? 'Untitled Project',
         path: openPath,

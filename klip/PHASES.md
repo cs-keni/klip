@@ -22,7 +22,7 @@
 ## Phase 2b — Media Library Polish (partial)
 - [x] Persist media bin across sessions (localStorage via Zustand persist)
 - [x] Missing file detection on launch (marks isMissing, no relink UI yet)
-- [ ] Relink dialog for missing files
+- [x] Relink dialog for missing files (right-click → "Relink Media…" → OS file picker → re-processes metadata + thumbnail)
 - [x] **Source Clip Viewer** — double-click a media bin clip to open a dedicated preview modal
   - [x] Full playback with play/pause, frame step, scrub bar
   - [x] I key = set in-point, O key = set out-point; purple region shown on scrub bar
