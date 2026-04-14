@@ -3,9 +3,10 @@ import { stat } from 'fs/promises'
 
 export function registerMediaHandlers(): void {
   // Open native file picker for media import
-  ipcMain.handle('media:open-dialog', async () => {
+  ipcMain.handle('media:open-dialog', async (_, opts?: { defaultPath?: string }) => {
     const result = await dialog.showOpenDialog({
       title: 'Import Media',
+      ...(opts?.defaultPath ? { defaultPath: opts.defaultPath } : {}),
       filters: [
         {
           name: 'Media Files',

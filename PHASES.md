@@ -392,7 +392,7 @@ Aesthetic: dark, modern, fluid — closer to Figma/Linear than Blender.
 - [x] Timeline settings: default snap behavior
 - [x] Keyboard shortcuts viewer (updated with Ctrl+K entry)
 - [x] FFmpeg path override (for users who want to use a system FFmpeg)
-- [ ] Music library folder location setting
+- [x] Music library folder location setting
 - [ ] Tutorial settings: option to replay the tutorial or reset onboarding state
 
 **General QoL:**
@@ -424,8 +424,8 @@ Every interaction should feel responsive and alive — not flashy, just smooth a
 - [x] Clip drag: ghost/shadow follows cursor; original clip dims slightly (opacity 0.72 + elevated shadow during drag)
 - [x] Clip drop: landing clip bounces softly into place (spring — position changes animate with spring stiffness 500/damping 38, applies to zoom too)
 - [x] Clip delete: clip collapses horizontally before disappearing (scaleX 0, originX left, 160ms ease-in)
-- [ ] Timeline zoom: ruler and clips scale smoothly, not in jumps
-- [ ] Timeline scroll: inertia (coasts after fast scroll, decelerates naturally)
+- [x] Timeline zoom: ruler and clips scale smoothly, not in jumps (lerp rAF + cursor-anchored)
+- [x] Timeline scroll: inertia (coasts after fast scroll, decelerates naturally)
 - [x] Modal open: scale up from 95% with fade-in (200ms); close is reverse (SettingsDialog, ExportDialog, CrashRecoveryDialog)
 - [x] Notification/toast: slides in from bottom-right, auto-dismisses with a progress bar underneath (Toaster system built)
 - [x] Staggered entrance: when media bin loads multiple clips, they appear one by one (30ms stagger)

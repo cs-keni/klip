@@ -261,7 +261,7 @@ function formatBytes(bytes: number): string {
 }
 
 function AppTab(): JSX.Element {
-  const { defaultExportFolder, setDefaultExportFolder } = useAppSettingsStore()
+  const { defaultExportFolder, setDefaultExportFolder, musicLibraryFolder, setMusicLibraryFolder } = useAppSettingsStore()
   const [cacheInfo, setCacheInfo] = useState<{ count: number; totalBytes: number } | null>(null)
   const [clearing, setClearing] = useState(false)
 
@@ -272,6 +272,11 @@ function AppTab(): JSX.Element {
   async function handlePickFolder(): Promise<void> {
     const folder = await window.api.export.pickOutputFolder()
     if (folder) setDefaultExportFolder(folder)
+  }
+
+  async function handlePickMusicFolder(): Promise<void> {
+    const folder = await window.api.export.pickOutputFolder()
+    if (folder) setMusicLibraryFolder(folder)
   }
 
   async function handleClearCache(): Promise<void> {
@@ -312,6 +317,36 @@ function AppTab(): JSX.Element {
               onClick={() => setDefaultExportFolder(null)}
               className="p-1.5 rounded text-[var(--text-muted)] hover:text-[var(--destructive)] hover:bg-red-950/30 transition-colors duration-100"
               title="Clear default folder"
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
+      </SettingRow>
+
+      {/* Music library folder */}
+      <SettingRow
+        label="Music Library Folder"
+        description="The import dialog opens here when adding tracks to the music library."
+      >
+        <div className="flex items-center gap-2 w-full">
+          <div className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-[var(--bg-base)] border border-[var(--border)] text-xs text-[var(--text-muted)] truncate">
+            {musicLibraryFolder ?? (
+              <span className="text-[var(--text-disabled)]">Not set — opens system default location</span>
+            )}
+          </div>
+          <button
+            onClick={handlePickMusicFolder}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] transition-colors duration-100 shrink-0 active:scale-[0.97]"
+          >
+            <FolderOpen size={12} />
+            Browse…
+          </button>
+          {musicLibraryFolder && (
+            <button
+              onClick={() => setMusicLibraryFolder(null)}
+              className="p-1.5 rounded text-[var(--text-muted)] hover:text-[var(--destructive)] hover:bg-red-950/30 transition-colors duration-100"
+              title="Clear music library folder"
             >
               <X size={12} />
             </button>

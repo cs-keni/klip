@@ -7,6 +7,7 @@ import { Tooltip } from '@/components/ui/tooltip'
 import { useMusicStore, type MusicTrack } from '@/stores/musicStore'
 import { useMediaStore } from '@/stores/mediaStore'
 import { useTimelineStore } from '@/stores/timelineStore'
+import { useAppSettingsStore } from '@/stores/appSettingsStore'
 import { pathToFileUrl, formatDuration, processMediaFile } from '@/lib/mediaUtils'
 import type { TimelineClip } from '@/types/timeline'
 import type { MediaClip } from '@/types/media'
@@ -37,7 +38,8 @@ export default function MusicLibrary(): JSX.Element {
   // ── Import ───────────────────────────────────────────────────────────────
 
   const handleImport = useCallback(async () => {
-    const paths = await window.api.media.openDialog()
+    const { musicLibraryFolder } = useAppSettingsStore.getState()
+    const paths = await window.api.media.openDialog(musicLibraryFolder ?? undefined)
     const audioPaths = paths.filter((p) => AUDIO_EXTENSIONS.test(p))
     if (audioPaths.length === 0) return
 

@@ -17,7 +17,8 @@ const api = {
 
   media: {
     /** Open the native file picker; returns selected file paths (may be empty). */
-    openDialog: (): Promise<string[]> => ipcRenderer.invoke('media:open-dialog'),
+    openDialog: (defaultPath?: string): Promise<string[]> =>
+      ipcRenderer.invoke('media:open-dialog', defaultPath ? { defaultPath } : undefined),
 
     /** Get file metadata (currently: file size in bytes). */
     getFileInfo: (filePath: string): Promise<{ size: number }> =>

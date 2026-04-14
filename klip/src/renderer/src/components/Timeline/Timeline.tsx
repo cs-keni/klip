@@ -42,11 +42,69 @@ export default function Timeline(): JSX.Element {
   const [isScrubbing, setIsScrubbing] = useState(false)
   const [rulerFormat, setRulerFormat] = useState<'seconds' | 'timecode'>('seconds')
 
+  // ── Smooth zoom animation ─────────────────────────────────────────────────
+  // displayPxPerSec lerps toward the store's pxPerSec (the target) each rAF.
+  // All rendering uses displayPxPerSec; store operations still use pxPerSec.
+
+  const displayPxPerSecRef = useRef(pxPerSec)
+  const [displayPxPerSec, setDisplayPxPerSec] = useState(pxPerSec)
+  // When zooming with the wheel, we record what timeline time is under the cursor
+  // so we can keep it anchored as displayPxPerSec animates toward the target.
+  const zoomAnchorRef = useRef<{ time: number; mouseX: number } | null>(null)
+  const zoomAnimRafRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (zoomAnimRafRef.current !== null) cancelAnimationFrame(zoomAnimRafRef.current)
+
+    function step(): void {
+      const cur = displayPxPerSecRef.current
+      const diff = pxPerSec - cur
+
+      if (Math.abs(diff) < 0.05) {
+        displayPxPerSecRef.current = pxPerSec
+        setDisplayPxPerSec(pxPerSec)
+        if (zoomAnchorRef.current && scrollRef.current) {
+          scrollRef.current.scrollLeft = Math.max(
+            0,
+            zoomAnchorRef.current.time * pxPerSec - zoomAnchorRef.current.mouseX
+          )
+        }
+        zoomAnchorRef.current = null
+        zoomAnimRafRef.current = null
+        return
+      }
+
+      const next = cur + diff * 0.2
+      displayPxPerSecRef.current = next
+      setDisplayPxPerSec(next)
+
+      // Keep the anchor point (time under cursor) locked during animation
+      if (zoomAnchorRef.current && scrollRef.current) {
+        scrollRef.current.scrollLeft = Math.max(
+          0,
+          zoomAnchorRef.current.time * next - zoomAnchorRef.current.mouseX
+        )
+      }
+
+      zoomAnimRafRef.current = requestAnimationFrame(step)
+    }
+
+    zoomAnimRafRef.current = requestAnimationFrame(step)
+    return () => {
+      if (zoomAnimRafRef.current !== null) cancelAnimationFrame(zoomAnimRafRef.current)
+    }
+  }, [pxPerSec])
+
+  // ── Scroll momentum ───────────────────────────────────────────────────────
+
+  const scrollVelRef   = useRef(0)
+  const scrollMomRafRef = useRef<number | null>(null)
+
   // ── Derived dimensions ────────────────────────────────────────────────────
 
   const lastClipEnd    = clips.reduce((max, c) => Math.max(max, c.startTime + c.duration), 0)
   const totalDuration  = Math.max(lastClipEnd + 60, 120)
-  const contentWidth   = totalDuration * pxPerSec
+  const contentWidth   = totalDuration * displayPxPerSec
 
   // ── Scroll sync ───────────────────────────────────────────────────────────
 
@@ -61,7 +119,7 @@ export default function Timeline(): JSX.Element {
     const el = scrollRef.current
     if (!el) return
 
-    const playheadX   = HEADER_WIDTH + playheadTime * pxPerSec
+    const playheadX   = HEADER_WIDTH + playheadTime * displayPxPerSecRef.current
     const visibleEnd  = el.scrollLeft + el.clientWidth
 
     if (playheadX > visibleEnd - SCROLL_MARGIN) {
@@ -69,25 +127,56 @@ export default function Timeline(): JSX.Element {
     }
   }, [playheadTime, isPlaying, pxPerSec])
 
-  // ── Wheel: horizontal scroll OR zoom ─────────────────────────────────────
+  // ── Wheel: horizontal scroll (with momentum) OR zoom (cursor-anchored) ───
 
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
 
-    function handleWheel(e: WheelEvent) {
+    function runMomentum(): void {
+      scrollVelRef.current *= 0.85
+      if (!scrollRef.current || Math.abs(scrollVelRef.current) < 0.5) {
+        scrollVelRef.current = 0
+        scrollMomRafRef.current = null
+        return
+      }
+      scrollRef.current.scrollLeft += scrollVelRef.current
+      scrollMomRafRef.current = requestAnimationFrame(runMomentum)
+    }
+
+    function handleWheel(e: WheelEvent): void {
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault()
         const factor = e.deltaY > 0 ? 0.85 : 1.18
-        setPxPerSec(Math.max(MIN_PX_PER_SEC, Math.min(MAX_PX_PER_SEC, pxPerSec * factor)))
+        const newPps = Math.max(MIN_PX_PER_SEC, Math.min(MAX_PX_PER_SEC, pxPerSec * factor))
+
+        // Record cursor anchor: what timeline time is under the cursor right now
+        const rect = el.getBoundingClientRect()
+        const mouseX = e.clientX - rect.left - HEADER_WIDTH
+        if (mouseX > 0) {
+          zoomAnchorRef.current = {
+            time: (el.scrollLeft + mouseX) / displayPxPerSecRef.current,
+            mouseX
+          }
+        }
+
+        setPxPerSec(newPps)
       } else {
         e.preventDefault()
-        el!.scrollLeft += e.deltaY + e.deltaX
+        // Kill any ongoing momentum and start a new one seeded from this delta
+        if (scrollMomRafRef.current !== null) cancelAnimationFrame(scrollMomRafRef.current)
+        const delta = e.deltaX + e.deltaY
+        el.scrollLeft += delta
+        scrollVelRef.current = delta * 0.45
+        scrollMomRafRef.current = requestAnimationFrame(runMomentum)
       }
     }
 
     el.addEventListener('wheel', handleWheel, { passive: false })
-    return () => el!.removeEventListener('wheel', handleWheel)
+    return () => {
+      el.removeEventListener('wheel', handleWheel)
+      if (scrollMomRafRef.current !== null) cancelAnimationFrame(scrollMomRafRef.current)
+    }
   }, [pxPerSec, setPxPerSec])
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
@@ -275,7 +364,7 @@ export default function Timeline(): JSX.Element {
 
   // ── Geometry ──────────────────────────────────────────────────────────────
 
-  const playheadPx       = HEADER_WIDTH + playheadTime * pxPerSec
+  const playheadPx       = HEADER_WIDTH + playheadTime * displayPxPerSec
   const totalTrackHeight = tracks.reduce((h, t) => h + TRACK_HEIGHT[t.type], 0)
 
   return (
@@ -358,7 +447,7 @@ export default function Timeline(): JSX.Element {
               style={{ width: HEADER_WIDTH, position: 'sticky', left: 0 }}
             />
             <TimelineRuler
-              pxPerSec={pxPerSec}
+              pxPerSec={displayPxPerSec}
               totalDuration={totalDuration}
               playheadTime={playheadTime}
               scrollLeft={scrollLeft}
@@ -378,7 +467,7 @@ export default function Timeline(): JSX.Element {
               key={track.id}
               track={track}
               clips={clips.filter((c) => c.trackId === track.id)}
-              pxPerSec={pxPerSec}
+              pxPerSec={displayPxPerSec}
               scrollLeft={scrollLeft}
               contentWidth={contentWidth}
               selectedClipId={selectedClipId}
@@ -401,8 +490,8 @@ export default function Timeline(): JSX.Element {
           <div
             className="absolute pointer-events-none z-10"
             style={{
-              left:   HEADER_WIDTH + loopIn  * pxPerSec,
-              width:  (loopOut - loopIn) * pxPerSec,
+              left:   HEADER_WIDTH + loopIn  * displayPxPerSec,
+              width:  (loopOut - loopIn) * displayPxPerSec,
               top:    RULER_HEIGHT,
               height: totalTrackHeight,
               backgroundColor: loopEnabled ? 'rgba(168,85,247,0.12)' : 'rgba(168,85,247,0.06)',
