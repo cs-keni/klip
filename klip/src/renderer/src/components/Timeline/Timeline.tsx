@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { Minus, Plus, Maximize2, Undo2, Redo2, Magnet, Repeat, Timer } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatTimecode } from '@/lib/mediaUtils'
@@ -6,6 +7,8 @@ import { useTimelineStore } from '@/stores/timelineStore'
 import { useCommandPaletteStore } from '@/stores/commandPaletteStore'
 import { toast } from '@/stores/toastStore'
 import { HEADER_WIDTH, TRACK_HEIGHT } from '@/types/timeline'
+import { subscribeSnapTime } from '@/lib/snapIndicator'
+import { markRipple } from '@/lib/rippleSignal'
 import TimelineRuler from './TimelineRuler'
 import TrackRow from './TrackRow'
 
@@ -126,6 +129,14 @@ export default function Timeline(): JSX.Element {
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
+
+  // ── Snap indicator ────────────────────────────────────────────────────────
+  // TimelineClipView publishes the snapped time (seconds) while dragging near
+  // a snap point. We subscribe here and render a hairline across all tracks.
+
+  const [snapIndicatorTime, setSnapIndicatorTime] = useState<number | null>(null)
+
+  useEffect(() => subscribeSnapTime(setSnapIndicatorTime), [])
 
   // ── Auto-scroll during playback ───────────────────────────────────────────
 
@@ -295,6 +306,8 @@ export default function Timeline(): JSX.Element {
         if (selectedClipIds.length === 0) return
         e.preventDefault()
         if (e.shiftKey) {
+          // Mark ripple BEFORE the store update so the spring delay fires correctly
+          markRipple()
           if (selectedClipIds.length > 1) rippleDeleteSelected()
           else rippleDelete(selectedClipIds[0])
         } else {
@@ -516,6 +529,43 @@ export default function Timeline(): JSX.Element {
             }}
           />
         )}
+
+        {/* ── Snap indicator line ────────────────────────────────────────── */}
+        <AnimatePresence>
+          {snapIndicatorTime !== null && (
+            <motion.div
+              className="absolute pointer-events-none"
+              style={{
+                left:    HEADER_WIDTH + snapIndicatorTime * displayPxPerSec,
+                top:     RULER_HEIGHT,
+                height:  totalTrackHeight,
+                width:   1,
+                zIndex:  25
+              }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.08 }}
+            >
+              {/* Hairline */}
+              <div
+                className="absolute inset-0"
+                style={{ background: 'rgba(250, 204, 21, 0.75)' }}
+              />
+              {/* Diamond cap at top */}
+              <div
+                className="absolute -translate-x-[3px]"
+                style={{
+                  top: -4,
+                  width: 7,
+                  height: 7,
+                  background: 'rgba(250, 204, 21, 0.9)',
+                  transform: 'translateX(-3px) rotate(45deg)'
+                }}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* ── Playhead line ──────────────────────────────────────────────── */}
         <div

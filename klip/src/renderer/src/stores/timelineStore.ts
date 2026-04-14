@@ -60,8 +60,10 @@ interface TimelineState {
   selectClip: (id: string | null) => void
   toggleClipInSelection: (id: string) => void
   moveClip: (id: string, startTime: number) => void
+  moveClipOnly: (id: string, startTime: number) => void
   moveClips: (moves: { id: string; newStart: number }[]) => void
   trimClip: (id: string, patch: TrimPatch) => void
+  trimClipOnly: (id: string, patch: TrimPatch) => void
   trimToPlayhead: (id: string, side: 'start' | 'end') => void
   splitClip: (id: string) => void
   rippleDelete: (id: string) => void
@@ -256,6 +258,16 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       }
     }),
 
+  /** Move only this clip — skip any linked pair (Alt-drag independence). */
+  moveClipOnly: (id, startTime) =>
+    set((s) => ({
+      past: [...s.past.slice(-49), snapshot(s)],
+      future: [],
+      clips: s.clips.map((c) =>
+        c.id === id ? { ...c, startTime: Math.max(0, startTime) } : c
+      )
+    })),
+
   /**
    * Commit a batch of clip moves in one undo-history entry.
    * For each clip, also moves its linked pair if it isn't already in the list.
@@ -305,6 +317,21 @@ export const useTimelineStore = create<TimelineState>((set) => ({
         })
       }
     }),
+
+  /** Trim only this clip — skip any linked pair (Alt-drag independence). */
+  trimClipOnly: (id, patch) =>
+    set((s) => ({
+      past: [...s.past.slice(-49), snapshot(s)],
+      future: [],
+      clips: s.clips.map((c) => {
+        if (c.id !== id) return c
+        const next = { ...c, ...patch }
+        next.startTime = Math.max(0, next.startTime ?? c.startTime)
+        next.trimStart = Math.max(0, next.trimStart ?? c.trimStart)
+        next.duration  = Math.max(0.1, next.duration ?? c.duration)
+        return next
+      })
+    })),
 
   trimToPlayhead: (id, side) =>
     set((s) => {

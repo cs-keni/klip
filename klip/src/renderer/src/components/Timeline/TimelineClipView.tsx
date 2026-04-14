@@ -8,6 +8,8 @@ import { useTimelineStore } from '@/stores/timelineStore'
 import { useMediaStore } from '@/stores/mediaStore'
 import { useWaveform } from '@/hooks/useWaveform'
 import { dragRegistry } from '@/lib/dragRegistry'
+import { setSnapTime } from '@/lib/snapIndicator'
+import { wasRecentRipple } from '@/lib/rippleSignal'
 import WaveformCanvas from './WaveformCanvas'
 import type { TimelineClip, TextSettings, ColorSettings, CropSettings, Transition } from '@/types/timeline'
 
@@ -56,7 +58,7 @@ export default function TimelineClipView({
   const {
     clips, transitions, playheadTime,
     selectedClipIds,
-    moveClip, moveClips, trimClip, selectClip, toggleClipInSelection,
+    moveClip, moveClipOnly, moveClips, trimClip, trimClipOnly, selectClip, toggleClipInSelection,
     setClipVolume, setClipSpeed, setClipFades, unlinkClip,
     setTextSettings, setColorSettings, setCropSettings, setClipRole,
     addTransition, removeTransition,
@@ -78,8 +80,17 @@ export default function TimelineClipView({
 
   useEffect(() => {
     if (!isDragging.current) {
-      // Spring-animate position/size changes so zoom transitions and undo/redo feel smooth
-      animate(leftMV, clip.startTime * pxPerSec, { type: 'spring', stiffness: 500, damping: 38, restDelta: 0.5 })
+      // Ripple-delete shifts start slightly delayed so clips only begin sliding
+      // after the deleted clip has started collapsing (collapse is 160ms, delay is 100ms).
+      // Also use a slightly softer spring for a more "flowy" gap-close feeling.
+      const ripple = wasRecentRipple()
+      animate(leftMV, clip.startTime * pxPerSec, {
+        type: 'spring',
+        stiffness: ripple ? 380 : 500,
+        damping:   ripple ? 30  : 38,
+        restDelta: 0.5,
+        delay:     ripple ? 0.1 : 0
+      })
       animate(widthMV, Math.max(2, clip.duration * pxPerSec), { type: 'spring', stiffness: 500, damping: 38, restDelta: 0.5 })
     }
   }, [clip.startTime, clip.duration, pxPerSec, leftMV, widthMV])
@@ -136,6 +147,10 @@ export default function TimelineClipView({
       return
     }
 
+    // Alt+click → select only this clip, breaking free from its linked pair
+    // for this drag operation (video and audio move independently).
+    const independent = e.altKey
+
     // If this clip is already part of a multi-selection, keep all clips selected.
     // Otherwise reset to just this clip so a single-clip drag works as before.
     const inMultiSelection = selectedClipIds.includes(clip.id) && selectedClipIds.length > 1
@@ -168,9 +183,12 @@ export default function TimelineClipView({
       const dt = dx / pxPerSec
 
       if (mode === 'move') {
-        // Snap is driven by the primary (dragged) clip; other clips follow the same delta
-        const snappedStart = snapTime(Math.max(0, drag.origStart + dt), snapPts)
+        const rawStart     = Math.max(0, drag.origStart + dt)
+        const snappedStart = snapTime(rawStart, snapPts)
         const actualDt     = snappedStart - drag.origStart
+
+        // Emit snap indicator when snapping to a point
+        setSnapTime(snappedStart !== rawStart ? snappedStart : null)
 
         if (isMultiMove && multiOrigStarts) {
           dragRegistry.applyDelta(multiOrigStarts, actualDt, pxPerSec)
@@ -181,6 +199,7 @@ export default function TimelineClipView({
         const rawStart    = Math.max(0, drag.origStart + dt)
         const snapped     = snapTime(rawStart, snapPts)
         const newDuration = drag.origStart + drag.origDuration - snapped
+        setSnapTime(snapped !== rawStart ? snapped : null)
         if (newDuration >= MIN_DUR) {
           leftMV.set(snapped * pxPerSec)
           widthMV.set(newDuration * pxPerSec)
@@ -188,6 +207,7 @@ export default function TimelineClipView({
       } else {
         const rawEnd  = drag.origStart + drag.origDuration + dt
         const snapped = snapTime(rawEnd, snapPts)
+        setSnapTime(snapped !== rawEnd ? snapped : null)
         const newDur  = Math.max(MIN_DUR, snapped - drag.origStart)
         widthMV.set(newDur * pxPerSec)
       }
@@ -198,6 +218,8 @@ export default function TimelineClipView({
       window.removeEventListener('pointerup',   onUp)
       isDragging.current = false
       setIsDraggingState(false)
+      // Clear snap indicator when drag ends
+      setSnapTime(null)
 
       const dx = ev.clientX - drag.startX
       const dt = dx / pxPerSec
@@ -215,8 +237,13 @@ export default function TimelineClipView({
           }))
           moveClips(moves)
         } else {
-          if (Math.abs(snappedStart - drag.origStart) > 0.001) moveClip(clip.id, snappedStart)
-          else leftMV.set(drag.origStart * pxPerSec)
+          if (Math.abs(snappedStart - drag.origStart) > 0.001) {
+            // independent (Alt) → only move this clip, not its linked pair
+            if (independent) moveClipOnly(clip.id, snappedStart)
+            else moveClip(clip.id, snappedStart)
+          } else {
+            leftMV.set(drag.origStart * pxPerSec)
+          }
         }
       } else if (mode === 'trim-left') {
         const rawStart    = Math.max(0, drag.origStart + dt)
@@ -224,11 +251,13 @@ export default function TimelineClipView({
         const newDuration = drag.origStart + drag.origDuration - snapped
         if (newDuration >= MIN_DUR) {
           const dtActual = snapped - drag.origStart
-          trimClip(clip.id, {
+          const patch = {
             startTime: snapped,
             trimStart: Math.max(0, drag.origTrimStart + dtActual * (clip.speed ?? 1)),
             duration:  newDuration
-          })
+          }
+          if (independent) trimClipOnly(clip.id, patch)
+          else trimClip(clip.id, patch)
         } else {
           leftMV.set(drag.origStart    * pxPerSec)
           widthMV.set(drag.origDuration * pxPerSec)
@@ -238,7 +267,8 @@ export default function TimelineClipView({
         const snapped = snapTime(rawEnd, snapPts)
         const newDur  = Math.max(MIN_DUR, snapped - drag.origStart)
         if (Math.abs(newDur - drag.origDuration) > 0.001) {
-          trimClip(clip.id, { duration: newDur })
+          if (independent) trimClipOnly(clip.id, { duration: newDur })
+          else trimClip(clip.id, { duration: newDur })
         } else {
           widthMV.set(drag.origDuration * pxPerSec)
         }

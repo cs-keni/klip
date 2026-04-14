@@ -186,8 +186,8 @@ Aesthetic: dark, modern, fluid — closer to Figma/Linear than Blender.
 - [x] Video track lanes and audio track lanes (separate rows)
 - [x] Track renaming — double-click any track label to rename it
 - [x] Drag clips from media bin onto timeline
-- [ ] Linked clip selection — clicking a video clip also selects its linked audio; they move together by default
-  - [ ] Hold Alt while clicking to select video or audio independently
+- [x] Linked clip selection — clicking a video clip also selects its linked audio; they move together by default
+  - [x] Hold Alt while clicking to select video or audio independently
 - [x] Drag to reorder / reposition clips on the timeline
 - [x] Playhead — scrub left/right to seek
 - [x] Follow playhead — timeline scrolls during playback to keep the playhead centered in view
@@ -217,10 +217,10 @@ Aesthetic: dark, modern, fluid — closer to Figma/Linear than Blender.
 - [x] Smooth animated clip drag with spring physics
 - [x] Timeline ruler tick marks update smoothly on zoom
 - [x] Clip resize handles appear on hover (not always visible — reduces clutter)
-- [ ] Snap indicator line when clip is about to snap to an edge
+- [x] Snap indicator line when clip is about to snap to an edge
 - [x] Locked tracks visually dimmed with lock icon
 - [x] Gap indicators with amber dashed pattern
-- [ ] Ripple delete plays a subtle "collapse" animation
+- [x] Ripple delete plays a subtle "collapse" animation
 - [ ] Copy confirmation — briefly flash the copied clip(s) to confirm the action
 
 ---
