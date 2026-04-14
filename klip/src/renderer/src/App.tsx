@@ -4,6 +4,7 @@ import TitleBar from './components/TitleBar/TitleBar'
 import WelcomeScreen from './components/WelcomeScreen/WelcomeScreen'
 import AppLayout from './components/Layout/AppLayout'
 import Toaster from './components/ui/Toaster'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { useAppStore } from './stores/appStore'
 import { useProjectIO } from './hooks/useProjectIO'
 import { restoreAutosave } from './lib/projectIO'
@@ -31,6 +32,7 @@ export default function App(): JSX.Element {
   }
 
   return (
+    <ErrorBoundary>
     <div className="app-root">
       <TitleBar />
 
@@ -106,5 +108,6 @@ export default function App(): JSX.Element {
         )}
       </AnimatePresence>
     </div>
+    </ErrorBoundary>
   )
 }

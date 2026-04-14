@@ -3,24 +3,27 @@ import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   X, FolderOpen, Sliders, Keyboard, AppWindow, Layers, Wrench,
-  HardDrive, Trash2, CheckCircle2, AlertCircle, RotateCcw
+  HardDrive, Trash2, CheckCircle2, AlertCircle, RotateCcw,
+  HelpCircle, Search, ChevronRight
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useProjectStore, type Resolution, type FrameRate, type AspectRatio } from '@/stores/projectStore'
 import { useAppSettingsStore } from '@/stores/appSettingsStore'
 import { useTimelineStore } from '@/stores/timelineStore'
 import { toast } from '@/stores/toastStore'
+import { HELP_ENTRIES, CATEGORY_LABELS, type HelpCategory, type HelpEntry } from '@/lib/helpContent'
 
 // ── Tab definitions ────────────────────────────────────────────────────────────
 
-type Tab = 'project' | 'app' | 'timeline' | 'advanced' | 'shortcuts'
+type Tab = 'project' | 'app' | 'timeline' | 'advanced' | 'shortcuts' | 'help'
 
 const TABS: { id: Tab; label: string; icon: ReactNode }[] = [
   { id: 'project',   label: 'Project',   icon: <Sliders size={14} /> },
   { id: 'app',       label: 'App',       icon: <AppWindow size={14} /> },
   { id: 'timeline',  label: 'Timeline',  icon: <Layers size={14} /> },
   { id: 'advanced',  label: 'Advanced',  icon: <Wrench size={14} /> },
-  { id: 'shortcuts', label: 'Shortcuts', icon: <Keyboard size={14} /> }
+  { id: 'shortcuts', label: 'Shortcuts', icon: <Keyboard size={14} /> },
+  { id: 'help',      label: 'Help',      icon: <HelpCircle size={14} /> }
 ]
 
 // ── Keyboard shortcut reference data ──────────────────────────────────────────
@@ -91,9 +94,10 @@ const SHORTCUT_GROUPS: { heading: string; rows: { label: string; keys: string[] 
 interface SettingsDialogProps {
   onClose: () => void
   initialTab?: Tab
+  initialHelpSearch?: string
 }
 
-export default function SettingsDialog({ onClose, initialTab }: SettingsDialogProps): JSX.Element {
+export default function SettingsDialog({ onClose, initialTab, initialHelpSearch }: SettingsDialogProps): JSX.Element {
   const [activeTab, setActiveTab] = useState<Tab>(initialTab ?? 'project')
 
   const dialog = (
@@ -112,7 +116,7 @@ export default function SettingsDialog({ onClose, initialTab }: SettingsDialogPr
 
       {/* Panel */}
       <motion.div
-        className="relative z-10 flex w-[660px] max-h-[82vh] rounded-xl overflow-hidden border border-[var(--border)] bg-[var(--bg-surface)] shadow-2xl"
+        className="relative z-10 flex w-[700px] max-h-[82vh] rounded-xl overflow-hidden border border-[var(--border)] bg-[var(--bg-surface)] shadow-2xl"
         initial={{ scale: 0.96, opacity: 0, y: 8 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.96, opacity: 0, y: 8 }}
@@ -163,6 +167,7 @@ export default function SettingsDialog({ onClose, initialTab }: SettingsDialogPr
               {activeTab === 'timeline'  && <TabPane key="timeline"><TimelineTab /></TabPane>}
               {activeTab === 'advanced'  && <TabPane key="advanced"><AdvancedTab /></TabPane>}
               {activeTab === 'shortcuts' && <TabPane key="shortcuts"><ShortcutsTab /></TabPane>}
+              {activeTab === 'help'      && <TabPane key="help"><HelpTab initialSearch={initialHelpSearch} /></TabPane>}
             </AnimatePresence>
           </div>
         </div>
@@ -572,6 +577,146 @@ function ShortcutsTab(): JSX.Element {
           </div>
         </div>
       ))}
+    </div>
+  )
+}
+
+// ── Help tab ───────────────────────────────────────────────────────────────────
+
+function HelpTab({ initialSearch }: { initialSearch?: string }): JSX.Element {
+  const [query, setQuery] = useState(initialSearch ?? '')
+
+  const q = query.trim().toLowerCase()
+
+  // Filter + group entries
+  const filtered = q
+    ? HELP_ENTRIES.filter(
+        (e) =>
+          e.title.toLowerCase().includes(q) ||
+          e.description.toLowerCase().includes(q) ||
+          (e.shortcut ?? []).some((k) => k.toLowerCase().includes(q))
+      )
+    : HELP_ENTRIES
+
+  // Group by category preserving declaration order
+  const grouped = new Map<HelpCategory, HelpEntry[]>()
+  for (const entry of filtered) {
+    if (!grouped.has(entry.category)) grouped.set(entry.category, [])
+    grouped.get(entry.category)!.push(entry)
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Search */}
+      <div className="relative">
+        <Search
+          size={13}
+          className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none"
+        />
+        <input
+          type="text"
+          placeholder="Search features…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          autoFocus
+          className="w-full pl-8 pr-3 py-2 rounded-lg bg-[var(--bg-base)] border border-[var(--border)] text-xs text-[var(--text-primary)] placeholder:text-[var(--text-disabled)] outline-none focus:border-[var(--accent)]/60 transition-colors duration-100"
+        />
+        {query && (
+          <button
+            onClick={() => setQuery('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+          >
+            <X size={12} />
+          </button>
+        )}
+      </div>
+
+      {/* Results */}
+      {filtered.length === 0 ? (
+        <div className="py-10 text-center">
+          <p className="text-xs text-[var(--text-muted)]">No features match &ldquo;{query}&rdquo;</p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-5">
+          {Array.from(grouped.entries()).map(([category, entries]) => (
+            <div key={category}>
+              <p className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mb-2">
+                {CATEGORY_LABELS[category]}
+              </p>
+              <div className="flex flex-col gap-0.5">
+                {entries.map((entry) => (
+                  <HelpEntryRow key={entry.id} entry={entry} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function HelpEntryRow({ entry }: { entry: HelpEntry }): JSX.Element {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div
+      className={cn(
+        'rounded-lg border transition-all duration-150',
+        open
+          ? 'border-[var(--border)] bg-[var(--bg-elevated)]'
+          : 'border-transparent hover:bg-[var(--bg-elevated)] hover:border-[var(--border-subtle)]'
+      )}
+    >
+      {/* Header row — always visible */}
+      <button
+        className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="text-xs font-medium text-[var(--text-primary)] truncate">
+            {entry.title}
+          </span>
+          {entry.shortcut && (
+            <div className="flex items-center gap-0.5 shrink-0">
+              {entry.shortcut.map((key, i) => (
+                <span key={i} className="flex items-center gap-0.5">
+                  <kbd className="px-1.5 py-0.5 rounded text-[9px] font-mono font-medium bg-[var(--bg-base)] border border-[var(--border)] text-[var(--text-muted)] leading-none">
+                    {key}
+                  </kbd>
+                  {i < entry.shortcut!.length - 1 && (
+                    <span className="text-[9px] text-[var(--text-disabled)]">+</span>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        <ChevronRight
+          size={12}
+          className={cn(
+            'shrink-0 text-[var(--text-muted)] transition-transform duration-150',
+            open && 'rotate-90'
+          )}
+        />
+      </button>
+
+      {/* Expanded description */}
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
+            className="overflow-hidden"
+          >
+            <p className="px-3 pb-3 text-[11px] text-[var(--text-muted)] leading-relaxed">
+              {entry.description}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

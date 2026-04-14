@@ -15,6 +15,7 @@ import ProjectSettingsModal from '@/components/Settings/ProjectSettingsModal'
 import SourceClipViewer from '@/components/MediaBin/SourceClipViewer'
 import CommandPalette from '@/components/CommandPalette/CommandPalette'
 import TutorialOverlay from '@/components/Tutorial/TutorialOverlay'
+import WhatThisOverlay from '@/components/Help/WhatThisOverlay'
 import type { TimelineClip, TextSettings } from '@/types/timeline'
 
 const SIDEBAR_MIN = 180
@@ -48,8 +49,8 @@ export default function AppLayout(): JSX.Element {
   const { tracks, playheadTime, addClip } = useTimelineStore()
 
   const {
-    showExport, showSettings, showProjectSettings,
-    setShowExport, setShowSettings, setShowProjectSettings
+    showExport, showSettings, showProjectSettings, whatsThisMode,
+    setShowExport, setShowSettings, setShowProjectSettings, setWhatsThisMode
   } = useUIStore()
 
   // Mount proxy IPC event listeners and check disk for existing proxies
@@ -114,6 +115,8 @@ export default function AppLayout(): JSX.Element {
         onSettingsClick={() => setShowSettings(true)}
         onProjectSettingsClick={() => setShowProjectSettings(true)}
         onHelpClick={() => setShowShortcuts(true)}
+        onWhatsThisClick={() => setWhatsThisMode(!whatsThisMode)}
+        whatsThisActive={whatsThisMode}
       />
 
       <AnimatePresence>
@@ -143,6 +146,9 @@ export default function AppLayout(): JSX.Element {
 
       {/* First-launch walkthrough */}
       <TutorialOverlay />
+
+      {/* What's This? mode overlay */}
+      <WhatThisOverlay />
 
       <SourceClipViewer />
 

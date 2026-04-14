@@ -19,6 +19,7 @@ export default function Sidebar(): JSX.Element {
           onClick={() => setActiveTab('media')}
           icon={<Film size={13} />}
           label="Media"
+          dataHelp="import-drag-drop"
         />
         <SidebarTab
           active={activeTab === 'music'}
@@ -26,6 +27,7 @@ export default function Sidebar(): JSX.Element {
           icon={<Music size={13} />}
           label="Music"
           dataTutorial="music-tab"
+          dataHelp="music-library"
         />
       </div>
 
@@ -59,11 +61,13 @@ function SidebarTab({
   icon: ReactNode
   label: string
   dataTutorial?: string
+  dataHelp?: string
 }): JSX.Element {
   return (
     <button
       onClick={onClick}
       data-tutorial={dataTutorial}
+      data-help={dataHelp}
       className={cn(
         'flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium',
         'transition-colors duration-100 border-b-2 -mb-[1px]',

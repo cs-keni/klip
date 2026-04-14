@@ -382,9 +382,8 @@ Aesthetic: dark, modern, fluid — closer to Figma/Linear than Blender.
   - [x] "Next" / "Back" / "Skip All" controls — never forced; step dot-progress indicator
   - [x] Animated card transitions, spotlight box-shadow highlight with accent border
 - [x] Tutorial accessible at any time from Settings → App → "Restart Tutorial"
-- [ ] In-app Help panel (? icon or Shift+?) — searchable descriptions of every feature
-  - [ ] Each entry has a short description and a visual GIF or diagram
-- [ ] "What's this?" hover mode — toggle it on, then hover any UI element to see a detailed tooltip explaining exactly what it does and its keyboard shortcut
+- [x] In-app Help panel — searchable Help tab in Settings; all features organized by category with expandable descriptions and shortcut badges
+- [x] "What's this?" hover mode — toggle button in toolbar (or press Esc to exit); hover any annotated UI element to see a floating rich tooltip with title, description, and keyboard shortcut
 - [x] Keyboard shortcut cheat sheet — accessible from Help (? key) button, opens Settings → Shortcuts tab
 
 **Settings Panel:**

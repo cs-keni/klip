@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react'
-import { MousePointer2, Scissors, Undo2, Redo2, ZoomOut, ZoomIn, Save, Settings, HelpCircle, Play, Type, Clapperboard } from 'lucide-react'
+import { MousePointer2, Scissors, Undo2, Redo2, ZoomOut, ZoomIn, Save, Settings, HelpCircle, Play, Type, Clapperboard, MessageCircleQuestion } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip } from '@/components/ui/tooltip'
 import { saveProject } from '@/lib/projectIO'
@@ -12,6 +12,8 @@ interface TopToolbarProps {
   onSettingsClick: () => void
   onProjectSettingsClick: () => void
   onHelpClick: () => void
+  onWhatsThisClick: () => void
+  whatsThisActive: boolean
 }
 
 const RESOLUTION_LABEL: Record<string, string> = {
@@ -25,7 +27,9 @@ export default function TopToolbar({
   onAddTextClip,
   onSettingsClick,
   onProjectSettingsClick,
-  onHelpClick
+  onHelpClick,
+  onWhatsThisClick,
+  whatsThisActive
 }: TopToolbarProps): JSX.Element {
   const { undo, redo } = useTimelineStore()
   const { settings } = useProjectStore()
@@ -35,8 +39,8 @@ export default function TopToolbar({
 
       {/* Tool selection */}
       <ToolGroup>
-        <ToolBtn icon={<MousePointer2 size={14} />} label="Select  V" active />
-        <ToolBtn icon={<Scissors size={14} />} label="Razor / Split  S" />
+        <ToolBtn icon={<MousePointer2 size={14} />} label="Select  V" active dataHelp="multi-select" />
+        <ToolBtn icon={<Scissors size={14} />} label="Razor / Split  S" dataHelp="split-clip" />
       </ToolGroup>
 
       <ToolDivider />
@@ -47,6 +51,7 @@ export default function TopToolbar({
           icon={<Type size={14} />}
           label="Add Text Overlay  T"
           onClick={onAddTextClip}
+          dataHelp="text-overlays"
         />
       </ToolGroup>
 
@@ -54,16 +59,16 @@ export default function TopToolbar({
 
       {/* History */}
       <ToolGroup>
-        <ToolBtn icon={<Undo2 size={14} />} label="Undo  Ctrl+Z" onClick={undo} />
-        <ToolBtn icon={<Redo2 size={14} />} label="Redo  Ctrl+Shift+Z" onClick={redo} />
+        <ToolBtn icon={<Undo2 size={14} />} label="Undo  Ctrl+Z" onClick={undo} dataHelp="undo-redo" />
+        <ToolBtn icon={<Redo2 size={14} />} label="Redo  Ctrl+Shift+Z" onClick={redo} dataHelp="undo-redo" />
       </ToolGroup>
 
       <ToolDivider />
 
       {/* Timeline zoom */}
       <ToolGroup>
-        <ToolBtn icon={<ZoomOut size={14} />} label="Zoom Out  -" />
-        <ToolBtn icon={<ZoomIn size={14} />} label="Zoom In  +" />
+        <ToolBtn icon={<ZoomOut size={14} />} label="Zoom Out  -" dataHelp="zoom-fit" />
+        <ToolBtn icon={<ZoomIn size={14} />} label="Zoom In  +" dataHelp="zoom-fit" />
       </ToolGroup>
 
       {/* Spacer */}
@@ -72,6 +77,7 @@ export default function TopToolbar({
       {/* Project settings pill */}
       <Tooltip content="Project settings — resolution, frame rate, aspect ratio">
         <button
+          data-help="project-settings"
           onClick={onProjectSettingsClick}
           className="flex items-center gap-1.5 px-2.5 h-7 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:border-[var(--accent)]/40 hover:bg-[var(--bg-elevated)] transition-all duration-150 active:scale-[0.96] shrink-0 group"
         >
@@ -88,6 +94,7 @@ export default function TopToolbar({
       <Tooltip content="Export video">
         <button
           data-tutorial="export-btn"
+          data-help="export-btn"
           onClick={onExportClick}
           className="flex items-center gap-1.5 px-3 h-7 rounded text-xs font-semibold bg-[var(--accent)] text-white hover:bg-[var(--accent-light)] transition-colors duration-100 active:scale-[0.96] shrink-0"
         >
@@ -100,9 +107,22 @@ export default function TopToolbar({
 
       {/* Utility */}
       <ToolGroup>
-        <ToolBtn icon={<Save size={14} />} label="Save  Ctrl+S" onClick={saveProject} />
-        <ToolBtn icon={<Settings size={14} />} label="Settings" onClick={onSettingsClick} />
-        <ToolBtn icon={<HelpCircle size={14} />} label="Keyboard shortcuts  ?" onClick={onHelpClick} />
+        <ToolBtn icon={<Save size={14} />} label="Save  Ctrl+S" onClick={saveProject} dataHelp="auto-save" />
+        <ToolBtn icon={<Settings size={14} />} label="Settings" onClick={onSettingsClick} dataHelp="settings" />
+        <ToolBtn icon={<HelpCircle size={14} />} label="Keyboard shortcuts  ?" onClick={onHelpClick} dataHelp="keyboard-shortcuts" />
+        <Tooltip content={whatsThisActive ? 'Exit What\'s This mode  Esc' : 'What\'s This? — hover any element to learn what it does'}>
+          <button
+            onClick={onWhatsThisClick}
+            className={cn(
+              'flex items-center justify-center w-7 h-7 rounded transition-all duration-100 active:scale-[0.93]',
+              whatsThisActive
+                ? 'bg-[var(--accent)] text-white shadow-sm ring-2 ring-[var(--accent)]/30'
+                : 'text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]'
+            )}
+          >
+            <MessageCircleQuestion size={14} />
+          </button>
+        </Tooltip>
       </ToolGroup>
     </div>
   )
@@ -117,19 +137,22 @@ function ToolBtn({
   label,
   active = false,
   disabled = false,
-  onClick
+  onClick,
+  dataHelp
 }: {
   icon: ReactNode
   label: string
   active?: boolean
   disabled?: boolean
   onClick?: () => void
+  dataHelp?: string
 }): JSX.Element {
   return (
     <Tooltip content={label}>
       <button
         disabled={disabled}
         onClick={onClick}
+        data-help={dataHelp}
         className={cn(
           'flex items-center justify-center w-7 h-7 rounded transition-all duration-100 active:scale-[0.93]',
           'disabled:opacity-35 disabled:pointer-events-none',
