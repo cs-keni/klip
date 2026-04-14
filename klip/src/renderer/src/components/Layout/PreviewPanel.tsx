@@ -48,29 +48,6 @@ export default function PreviewPanel(): JSX.Element {
   // ── Save frame context menu ───────────────────────────────────────────────
   const [frameMenu, setFrameMenu] = useState<{ x: number; y: number } | null>(null)
 
-  const handleSaveFrame = useCallback(async () => {
-    setFrameMenu(null)
-    const video = videoRef.current
-    if (!video || !activeMediaClip || activeMediaClip.type !== 'video') return
-    try {
-      const canvas = document.createElement('canvas')
-      canvas.width  = video.videoWidth  || 1920
-      canvas.height = video.videoHeight || 1080
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return
-      ctx.drawImage(video, 0, 0)
-      const dataUrl = canvas.toDataURL('image/png')
-      await window.api.export.saveFrame(dataUrl)
-    } catch { /* user cancelled or CORS */ }
-  }, [activeMediaClip])
-
-  // Close frame menu on outside click
-  useEffect(() => {
-    if (!frameMenu) return
-    const close = () => setFrameMenu(null)
-    document.addEventListener('click', close)
-    return () => document.removeEventListener('click', close)
-  }, [frameMenu])
 
   // ── Panel ref for fullscreen ──────────────────────────────────────────────
   const panelRef = useRef<HTMLDivElement>(null)
@@ -865,6 +842,31 @@ export default function PreviewPanel(): JSX.Element {
     () => (activeTimelineClip ? mediaClips.find((m) => m.id === activeTimelineClip.mediaClipId) ?? null : null),
     [activeTimelineClip, mediaClips]
   )
+
+  // ── Save frame context menu ───────────────────────────────────────────────
+  const handleSaveFrame = useCallback(async () => {
+    setFrameMenu(null)
+    const video = videoRef.current
+    if (!video || !activeMediaClip || activeMediaClip.type !== 'video') return
+    try {
+      const canvas = document.createElement('canvas')
+      canvas.width  = video.videoWidth  || 1920
+      canvas.height = video.videoHeight || 1080
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+      ctx.drawImage(video, 0, 0)
+      const dataUrl = canvas.toDataURL('image/png')
+      await window.api.export.saveFrame(dataUrl)
+    } catch { /* user cancelled or CORS */ }
+  }, [activeMediaClip])
+
+  // Close frame menu on outside click
+  useEffect(() => {
+    if (!frameMenu) return
+    const close = () => setFrameMenu(null)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [frameMenu])
 
   useEffect(() => {
     if (isPlayingRef.current) return

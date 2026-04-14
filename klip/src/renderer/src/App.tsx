@@ -32,9 +32,9 @@ export default function App(): JSX.Element {
   }
 
   return (
-    <ErrorBoundary>
     <div className="app-root">
       <TitleBar />
+    <ErrorBoundary>
 
       {/* Crash recovery dialog */}
       <AnimatePresence>
@@ -107,7 +107,7 @@ export default function App(): JSX.Element {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
     </ErrorBoundary>
+    </div>
   )
 }

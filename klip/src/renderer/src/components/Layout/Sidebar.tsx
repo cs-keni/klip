@@ -54,7 +54,8 @@ function SidebarTab({
   onClick,
   icon,
   label,
-  dataTutorial
+  dataTutorial,
+  dataHelp
 }: {
   active: boolean
   onClick: () => void

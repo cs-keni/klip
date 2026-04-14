@@ -1,4 +1,5 @@
 import { useState, useEffect, type ButtonHTMLAttributes } from 'react'
+import klipIcon from '@/assets/icon.ico'
 import { motion } from 'framer-motion'
 import { Minus, Square, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -94,22 +95,13 @@ function TitleBarButton({
 
 function KlipLogo({ size = 18 }: { size?: number }): JSX.Element {
   return (
-    <div
-      className="rounded-[5px] bg-[var(--accent)] flex items-center justify-center shrink-0"
-      style={{ width: size, height: size }}
-    >
-      <svg
-        width={size * 0.62}
-        height={size * 0.62}
-        viewBox="0 0 12 12"
-        fill="none"
-      >
-        {/* Play triangle */}
-        <path d="M2.5 2L9.5 6L2.5 10V2Z" fill="white" />
-        {/* Vertical cut line */}
-        <rect x="7.5" y="2" width="1.5" height="8" rx="0.75" fill="white" opacity="0.65" />
-      </svg>
-    </div>
+    <img
+      src={klipIcon}
+      width={size}
+      height={size}
+      style={{ imageRendering: 'auto', display: 'block' }}
+      alt="Klip"
+    />
   )
 }
 
