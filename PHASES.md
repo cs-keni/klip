@@ -209,9 +209,9 @@ Aesthetic: dark, modern, fluid — closer to Figma/Linear than Blender.
 - [x] Multi-select clips — Ctrl+click to toggle clips in/out of selection; Delete/copy work on all selected
 - [x] Multi-select drag — move all selected clips together
 - [ ] Shift+click range select (deferred)
-- [ ] Freeze frame — right-click a clip at the playhead position to insert a freeze frame hold
+- [x] Freeze frame — right-click a clip at the playhead position to insert a freeze frame hold
 - [x] Full undo / redo stack (Ctrl+Z / Ctrl+Shift+Z)
-- [ ] Timeline virtualization — only render visible clip elements (handles 8-hour source clips)
+- [x] Timeline virtualization — only render visible clip elements (handles 8-hour source clips)
 
 **QoL / UX:**
 - [x] Smooth animated clip drag with spring physics
@@ -221,7 +221,7 @@ Aesthetic: dark, modern, fluid — closer to Figma/Linear than Blender.
 - [x] Locked tracks visually dimmed with lock icon
 - [x] Gap indicators with amber dashed pattern
 - [x] Ripple delete plays a subtle "collapse" animation
-- [ ] Copy confirmation — briefly flash the copied clip(s) to confirm the action
+- [x] Copy confirmation — briefly flash the copied clip(s) to confirm the action
 
 ---
 

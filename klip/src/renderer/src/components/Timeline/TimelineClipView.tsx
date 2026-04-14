@@ -10,6 +10,8 @@ import { useWaveform } from '@/hooks/useWaveform'
 import { dragRegistry } from '@/lib/dragRegistry'
 import { setSnapTime } from '@/lib/snapIndicator'
 import { wasRecentRipple } from '@/lib/rippleSignal'
+import { subscribeCopyFlash } from '@/lib/copyFlash'
+import { pathToFileUrl } from '@/lib/mediaUtils'
 import WaveformCanvas from './WaveformCanvas'
 import type { TimelineClip, TextSettings, ColorSettings, CropSettings, Transition } from '@/types/timeline'
 
@@ -62,9 +64,10 @@ export default function TimelineClipView({
     setClipVolume, setClipSpeed, setClipFades, unlinkClip,
     setTextSettings, setColorSettings, setCropSettings, setClipRole,
     addTransition, removeTransition,
+    insertFreezeFrame,
     snapEnabled
   } = useTimelineStore()
-  const { clips: mediaClips } = useMediaStore()
+  const { clips: mediaClips, addClip: addMediaClip } = useMediaStore()
 
   const mediaClip = mediaClips.find((m) => m.id === clip.mediaClipId) ?? null
 
@@ -77,6 +80,55 @@ export default function TimelineClipView({
 
   const isDragging = useRef(false)
   const [isDraggingState, setIsDraggingState] = useState(false)
+
+  // ── Copy-confirmation flash ───────────────────────────────────────────────────
+  const [isFlashing, setIsFlashing] = useState(false)
+
+  useEffect(() => {
+    return subscribeCopyFlash((ids) => {
+      if (!ids.includes(clip.id)) return
+      setIsFlashing(true)
+      // Hold the bright state briefly, then let CSS transition fade it out
+      setTimeout(() => setIsFlashing(false), 120)
+    })
+  }, [clip.id])
+
+  // ── Freeze frame handler (called from context menu) ───────────────────────────
+  async function handleFreezeFrame(duration: number): Promise<void> {
+    if (!mediaClip?.path) return
+    const sourceTime = clip.trimStart + (playheadTime - clip.startTime) * (clip.speed ?? 1)
+    const frameId = crypto.randomUUID()
+    const framePath = await window.api.media.extractFrame(mediaClip.path, sourceTime, frameId)
+    if (!framePath) return
+
+    const thumbnail = pathToFileUrl(framePath)
+
+    // Register in the media store so it appears in the media bin
+    addMediaClip({
+      id:              frameId,
+      type:            'image',
+      path:            framePath,
+      name:            'Freeze Frame',
+      duration,
+      width:           mediaClip.width,
+      height:          mediaClip.height,
+      fps:             0,
+      fileSize:        0,
+      thumbnail,
+      thumbnailStatus: 'ready',
+      isOnTimeline:    true,
+      isMissing:       false,
+      addedAt:         Date.now()
+    })
+
+    insertFreezeFrame({
+      sourceClipId:    clip.id,
+      frameMediaClipId: frameId,
+      frameThumbnail:  thumbnail,
+      freezeAt:        playheadTime,
+      duration
+    })
+  }
 
   useEffect(() => {
     if (!isDragging.current) {
@@ -319,16 +371,20 @@ export default function TimelineClipView({
             background:  bg,
             borderWidth: 1,
             borderStyle: 'solid',
-            borderColor: isDraggingState ? style.border : isSelected ? style.border : 'rgba(255,255,255,0.12)',
-            boxShadow: isDraggingState
-              ? `0 14px 36px rgba(0,0,0,0.55), 0 0 0 1px ${style.border}99`
-              : isPrimary
-                ? `0 0 0 1px ${style.border}, 0 0 8px ${style.border}44`
-                : isSelected
-                  ? `0 0 0 1px ${style.border}88`
-                  : '0 1px 3px rgba(0,0,0,0.4)',
+            borderColor: isFlashing ? 'rgba(255,255,255,0.95)' : isDraggingState ? style.border : isSelected ? style.border : 'rgba(255,255,255,0.12)',
+            boxShadow: isFlashing
+              ? `0 0 0 2px rgba(255,255,255,0.7), 0 0 18px rgba(255,255,255,0.3)`
+              : isDraggingState
+                ? `0 14px 36px rgba(0,0,0,0.55), 0 0 0 1px ${style.border}99`
+                : isPrimary
+                  ? `0 0 0 1px ${style.border}, 0 0 8px ${style.border}44`
+                  : isSelected
+                    ? `0 0 0 1px ${style.border}88`
+                    : '0 1px 3px rgba(0,0,0,0.4)',
             opacity: isDraggingState ? 0.72 : 1,
-            transition: 'opacity 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease'
+            transition: isFlashing
+              ? 'border-color 0.06s ease-out, box-shadow 0.06s ease-out'
+              : 'opacity 0.12s ease, box-shadow 0.35s ease-out, border-color 0.35s ease-out'
           }}
           onPointerDown={(e) => startDrag(e, 'move')}
         >
@@ -556,6 +612,7 @@ export default function TimelineClipView({
             clip={clip}
             clips={clips}
             transitions={transitions}
+            playheadTime={playheadTime}
             onVolumeChange={(v) => setClipVolume(clip.id, v)}
             onSpeedChange={(v) => setClipSpeed(clip.id, v)}
             onTextChange={(s) => setTextSettings(clip.id, s)}
@@ -567,6 +624,7 @@ export default function TimelineClipView({
             onFadeChange={(fi, fo) => setClipFades(clip.id, fi, fo)}
             onNormalize={(v) => setClipVolume(clip.id, v)}
             onRoleChange={(role) => setClipRole(clip.id, role)}
+            onFreezeFrame={handleFreezeFrame}
             mediaPath={mediaClip?.path ?? null}
             onClose={() => setCtxMenu(null)}
           />
@@ -578,7 +636,7 @@ export default function TimelineClipView({
 
 // ── Clip context menu ──────────────────────────────────────────────────────────
 
-type Section = 'volume' | 'fade' | 'speed' | 'text' | 'colorgrade' | 'crop' | 'transition'
+type Section = 'volume' | 'fade' | 'speed' | 'text' | 'colorgrade' | 'crop' | 'transition' | 'freeze'
 
 const SPEED_OPTIONS = [0.25, 0.5, 1, 1.5, 2, 4]
 
@@ -586,16 +644,17 @@ const SPEED_OPTIONS = [0.25, 0.5, 1, 1.5, 2, 4]
 const NORMALIZE_TARGET_LUFS = -18
 
 function ClipContextMenu({
-  x, y, clip, clips, transitions,
+  x, y, clip, clips, transitions, playheadTime,
   onVolumeChange, onSpeedChange, onTextChange,
   onColorChange, onCropChange, onAddTransition, onRemoveTransition,
-  onUnlink, onFadeChange, onNormalize, onRoleChange, mediaPath, onClose
+  onUnlink, onFadeChange, onNormalize, onRoleChange, onFreezeFrame, mediaPath, onClose
 }: {
   x: number
   y: number
   clip: TimelineClip
   clips: TimelineClip[]
   transitions: Transition[]
+  playheadTime: number
   onVolumeChange: (v: number) => void
   onSpeedChange: (v: number) => void
   onTextChange: (s: TextSettings) => void
@@ -607,6 +666,7 @@ function ClipContextMenu({
   onFadeChange: (fadeIn: number, fadeOut: number) => void
   onNormalize: (volume: number) => void
   onRoleChange: (role: 'intro' | 'outro' | undefined) => void
+  onFreezeFrame: (duration: number) => Promise<void>
   mediaPath: string | null
   onClose: () => void
 }): JSX.Element {
@@ -615,6 +675,26 @@ function ClipContextMenu({
     clip.type === 'text' ? 'text' : null
   )
   const [normalizing, setNormalizing] = useState(false)
+  const [freezeDuration, setFreezeDuration] = useState(3)
+  const [freezing, setFreezing] = useState(false)
+
+  // Is playhead inside this clip? (required for freeze frame to work)
+  const playheadInClip =
+    clip.type === 'video' &&
+    mediaPath !== null &&
+    playheadTime > clip.startTime + 0.05 &&
+    playheadTime < clip.startTime + clip.duration - 0.05
+
+  async function handleInsertFreeze(): Promise<void> {
+    if (!playheadInClip || freezing) return
+    setFreezing(true)
+    try {
+      await onFreezeFrame(freezeDuration)
+      onClose()
+    } finally {
+      setFreezing(false)
+    }
+  }
 
   // Find adjacent clips for transitions
   const adjacentNext = clips
@@ -970,6 +1050,49 @@ function ClipContextMenu({
                 display={`${existingFromTransition.duration.toFixed(1)}s`}
                 onChange={(v) => onAddTransition({ ...existingFromTransition, duration: v / 10 })}
               />
+            )}
+          </div>
+        </MenuSection>
+      )}
+
+      {/* ── Freeze Frame ─────────────────────────────────────────────────── */}
+      {clip.type === 'video' && mediaPath && (
+        <MenuSection
+          icon={<span className="text-[9px] font-mono opacity-80">⏸</span>}
+          label="Freeze Frame"
+          open={openSection === 'freeze'}
+          onToggle={() => toggleSection('freeze')}
+        >
+          <div className="space-y-2">
+            {playheadInClip ? (
+              <>
+                <SliderRow
+                  label="Duration"
+                  min={5} max={300} step={5}
+                  value={Math.round(freezeDuration * 10)}
+                  display={`${freezeDuration.toFixed(1)}s`}
+                  onChange={(v) => setFreezeDuration(v / 10)}
+                />
+                <button
+                  onClick={handleInsertFreeze}
+                  disabled={freezing}
+                  className={cn(
+                    'w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-[10px] font-medium transition-colors duration-100',
+                    freezing
+                      ? 'bg-[var(--bg-elevated)] text-[var(--text-muted)] cursor-not-allowed'
+                      : 'bg-[var(--accent)]/20 text-[var(--accent-light)] hover:bg-[var(--accent)]/30'
+                  )}
+                >
+                  {freezing
+                    ? <><Loader2 size={9} className="animate-spin" /> Extracting frame…</>
+                    : <>⏸ Insert {freezeDuration.toFixed(1)}s freeze at playhead</>
+                  }
+                </button>
+              </>
+            ) : (
+              <p className="text-[9px] text-[var(--text-muted)]">
+                Move the playhead inside this clip to insert a freeze frame.
+              </p>
             )}
           </div>
         </MenuSection>

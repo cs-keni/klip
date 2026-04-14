@@ -9,6 +9,7 @@ import { toast } from '@/stores/toastStore'
 import { HEADER_WIDTH, TRACK_HEIGHT } from '@/types/timeline'
 import { subscribeSnapTime } from '@/lib/snapIndicator'
 import { markRipple } from '@/lib/rippleSignal'
+import { flashCopy } from '@/lib/copyFlash'
 import TimelineRuler from './TimelineRuler'
 import TrackRow from './TrackRow'
 
@@ -279,6 +280,7 @@ export default function Timeline(): JSX.Element {
         copySelectedClips()
         const { selectedClipIds } = useTimelineStore.getState()
         if (selectedClipIds.length > 0) {
+          flashCopy(selectedClipIds)
           toast(selectedClipIds.length === 1 ? 'Clip copied' : `${selectedClipIds.length} clips copied`, 'info', 1800)
         }
         return

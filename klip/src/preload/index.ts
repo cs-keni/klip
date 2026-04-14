@@ -34,7 +34,15 @@ const api = {
 
     /** Open a type-filtered single-file picker for relinking missing media. */
     pickFile: (type: 'video' | 'audio' | 'image'): Promise<string | null> =>
-      ipcRenderer.invoke('media:pick-file', type)
+      ipcRenderer.invoke('media:pick-file', type),
+
+    /**
+     * Extract a single frame from a video file as a PNG.
+     * timeSeconds is the position in the SOURCE file (caller applies trimStart).
+     * Returns the absolute path to the saved PNG, or null on failure.
+     */
+    extractFrame: (filePath: string, timeSeconds: number, frameId: string): Promise<string | null> =>
+      ipcRenderer.invoke('media:extract-frame', { filePath, timeSeconds, frameId })
   },
 
   project: {

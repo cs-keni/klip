@@ -72,6 +72,13 @@ interface TimelineState {
   pasteClips: () => void
   closeGap: (trackId: string, gapStartTime: number) => void
   unlinkClip: (id: string) => void
+  insertFreezeFrame: (params: {
+    sourceClipId: string
+    frameMediaClipId: string
+    frameThumbnail: string | null
+    freezeAt: number
+    duration: number
+  }) => void
 
   // ── Playback ──────────────────────────────────────────────────────────────
   setIsPlaying: (v: boolean) => void
@@ -618,6 +625,96 @@ export const useTimelineStore = create<TimelineState>((set) => ({
             ? { ...c, linkedClipId: undefined }
             : c
         )
+      }
+    }),
+
+  /**
+   * Insert a freeze frame (image clip) at the playhead, splitting the source
+   * video clip in two. The right half — and its linked audio, if any — is
+   * shifted forward by `duration` to make room. Audio gets a silent gap.
+   */
+  insertFreezeFrame: ({ sourceClipId, frameMediaClipId, frameThumbnail, freezeAt, duration }) =>
+    set((s) => {
+      const src = s.clips.find((c) => c.id === sourceClipId)
+      if (!src || src.type !== 'video') return s
+
+      const offset = freezeAt - src.startTime
+      // Require at least 50ms on each side of the split
+      if (offset < 0.05 || offset > src.duration - 0.05) return s
+
+      const linkedAudio = src.linkedClipId
+        ? s.clips.find((c) => c.id === src.linkedClipId) ?? null
+        : null
+
+      const rightVideoId = crypto.randomUUID()
+      const rightAudioId = linkedAudio ? crypto.randomUUID() : undefined
+      const freezeClipId = crypto.randomUUID()
+
+      // ── Left video (reuses src.id) ────────────────────────────────────────
+      const leftVideo: TimelineClip = {
+        ...src,
+        duration: offset,
+        linkedClipId: rightAudioId ? undefined : src.linkedClipId
+        // left video loses link — the right halves re-link to each other
+      }
+
+      // ── Right video ───────────────────────────────────────────────────────
+      const rightVideo: TimelineClip = {
+        ...src,
+        id: rightVideoId,
+        startTime: freezeAt + duration,
+        trimStart: src.trimStart + offset * (src.speed ?? 1),
+        duration:  src.duration - offset,
+        linkedClipId: rightAudioId
+      }
+
+      // ── Freeze frame image clip ───────────────────────────────────────────
+      const freezeClip: TimelineClip = {
+        id:           freezeClipId,
+        mediaClipId:  frameMediaClipId,
+        trackId:      src.trackId,
+        startTime:    freezeAt,
+        duration,
+        trimStart:    0,
+        type:         'image',
+        name:         'Freeze Frame',
+        thumbnail:    frameThumbnail
+      }
+
+      // ── Left audio (reuses linkedAudio.id) ───────────────────────────────
+      const leftAudio: TimelineClip | null = linkedAudio
+        ? { ...linkedAudio, duration: offset, linkedClipId: undefined }
+        : null
+
+      // ── Right audio ───────────────────────────────────────────────────────
+      const rightAudio: TimelineClip | null = linkedAudio && rightAudioId
+        ? {
+            ...linkedAudio,
+            id:           rightAudioId,
+            startTime:    freezeAt + duration,
+            trimStart:    linkedAudio.trimStart + offset * (linkedAudio.speed ?? 1),
+            duration:     linkedAudio.duration - offset,
+            linkedClipId: rightVideoId
+          }
+        : null
+
+      // ── Rebuild clip list ─────────────────────────────────────────────────
+      const idsToReplace = new Set([src.id, ...(linkedAudio ? [linkedAudio.id] : [])])
+      const kept = s.clips.filter((c) => !idsToReplace.has(c.id))
+
+      const newClips: TimelineClip[] = [
+        ...kept,
+        leftVideo,
+        ...(leftAudio ? [leftAudio] : []),
+        freezeClip,
+        rightVideo,
+        ...(rightAudio ? [rightAudio] : [])
+      ]
+
+      return {
+        past: [...s.past.slice(-49), snapshot(s)],
+        future: [],
+        clips: newClips
       }
     }),
 
