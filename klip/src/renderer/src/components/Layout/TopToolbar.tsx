@@ -1,18 +1,32 @@
 import { type ReactNode } from 'react'
-import { MousePointer2, Scissors, Undo2, Redo2, ZoomOut, ZoomIn, Save, Settings, HelpCircle, Play, Type } from 'lucide-react'
+import { MousePointer2, Scissors, Undo2, Redo2, ZoomOut, ZoomIn, Save, Settings, HelpCircle, Play, Type, Clapperboard } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip } from '@/components/ui/tooltip'
 import { saveProject } from '@/lib/projectIO'
 import { useTimelineStore } from '@/stores/timelineStore'
+import { useProjectStore } from '@/stores/projectStore'
 
 interface TopToolbarProps {
   onExportClick: () => void
   onAddTextClip: () => void
   onSettingsClick: () => void
+  onProjectSettingsClick: () => void
 }
 
-export default function TopToolbar({ onExportClick, onAddTextClip, onSettingsClick }: TopToolbarProps): JSX.Element {
+const RESOLUTION_LABEL: Record<string, string> = {
+  '1080p': '1080p',
+  '1440p': '1440p',
+  '4k':    '4K'
+}
+
+export default function TopToolbar({
+  onExportClick,
+  onAddTextClip,
+  onSettingsClick,
+  onProjectSettingsClick
+}: TopToolbarProps): JSX.Element {
   const { undo, redo } = useTimelineStore()
+  const { settings } = useProjectStore()
 
   return (
     <div className="flex items-center h-[42px] px-3 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)] gap-1 shrink-0">
@@ -52,6 +66,21 @@ export default function TopToolbar({ onExportClick, onAddTextClip, onSettingsCli
 
       {/* Spacer */}
       <div className="flex-1" />
+
+      {/* Project settings pill */}
+      <Tooltip content="Project settings — resolution, frame rate, aspect ratio">
+        <button
+          onClick={onProjectSettingsClick}
+          className="flex items-center gap-1.5 px-2.5 h-7 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:border-[var(--accent)]/40 hover:bg-[var(--bg-elevated)] transition-all duration-150 active:scale-[0.96] shrink-0 group"
+        >
+          <Clapperboard size={11} className="text-[var(--accent)] shrink-0" />
+          <span className="text-[11px] font-medium tabular-nums">
+            {RESOLUTION_LABEL[settings.resolution]} · {settings.frameRate} fps
+          </span>
+        </button>
+      </Tooltip>
+
+      <ToolDivider />
 
       {/* Export CTA */}
       <Tooltip content="Export video">

@@ -109,7 +109,7 @@ Aesthetic: dark, modern, fluid — closer to Figma/Linear than Blender.
 - [ ] FFmpeg integration — bundle ffmpeg-static, verify it runs on Windows (Phase 2)
 - [ ] SQLite setup via better-sqlite3 (Phase 2)
 - [x] Basic IPC bridge between Electron main process and React renderer
-- [ ] Project settings modal — set resolution (1080p/1440p/4K), frame rate (30/60fps), aspect ratio (16:9)
+- [x] Project settings modal — set resolution (1080p/1440p/4K), frame rate (30/60fps), aspect ratio (16:9)
 
 **QoL / UX:**
 - [x] Window remembers last size and position on reopen
@@ -207,7 +207,7 @@ Aesthetic: dark, modern, fluid — closer to Figma/Linear than Blender.
 - [x] Clip thumbnails visible on the timeline at sufficient zoom levels
 - [x] Clip duration label on each timeline clip
 - [x] Multi-select clips — Ctrl+click to toggle clips in/out of selection; Delete/copy work on all selected
-- [ ] Multi-select drag — move all selected clips together (deferred)
+- [x] Multi-select drag — move all selected clips together
 - [ ] Shift+click range select (deferred)
 - [ ] Freeze frame — right-click a clip at the playhead position to insert a freeze frame hold
 - [x] Full undo / redo stack (Ctrl+Z / Ctrl+Shift+Z)

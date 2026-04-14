@@ -11,6 +11,7 @@ import TopToolbar from './TopToolbar'
 import ResizeHandle from './ResizeHandle'
 import ExportDialog from '@/components/Export/ExportDialog'
 import SettingsDialog from '@/components/Settings/SettingsDialog'
+import ProjectSettingsModal from '@/components/Settings/ProjectSettingsModal'
 import SourceClipViewer from '@/components/MediaBin/SourceClipViewer'
 import CommandPalette from '@/components/CommandPalette/CommandPalette'
 import { useState } from 'react'
@@ -45,7 +46,10 @@ export default function AppLayout(): JSX.Element {
 
   const { tracks, playheadTime, addClip } = useTimelineStore()
 
-  const { showExport, showSettings, setShowExport, setShowSettings } = useUIStore()
+  const {
+    showExport, showSettings, showProjectSettings,
+    setShowExport, setShowSettings, setShowProjectSettings
+  } = useUIStore()
 
   // Mount proxy IPC event listeners and check disk for existing proxies
   useProxyEvents()
@@ -94,6 +98,7 @@ export default function AppLayout(): JSX.Element {
         onExportClick={() => setShowExport(true)}
         onAddTextClip={handleAddTextClip}
         onSettingsClick={() => setShowSettings(true)}
+        onProjectSettingsClick={() => setShowProjectSettings(true)}
       />
 
       <AnimatePresence>
@@ -103,6 +108,11 @@ export default function AppLayout(): JSX.Element {
       <AnimatePresence>
         {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
       </AnimatePresence>
+
+      <ProjectSettingsModal
+        open={showProjectSettings}
+        onClose={() => setShowProjectSettings(false)}
+      />
 
       {/* Command palette — portal, always mounted, renders when open */}
       <CommandPalette />

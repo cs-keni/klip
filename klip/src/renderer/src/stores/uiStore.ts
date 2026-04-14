@@ -5,15 +5,19 @@ import { create } from 'zustand'
  * other non-component code can open/close dialogs without prop-drilling.
  */
 interface UIState {
-  showExport:      boolean
-  showSettings:    boolean
-  setShowExport:   (v: boolean) => void
-  setShowSettings: (v: boolean) => void
+  showExport:             boolean
+  showSettings:           boolean
+  showProjectSettings:    boolean
+  setShowExport:          (v: boolean) => void
+  setShowSettings:        (v: boolean) => void
+  setShowProjectSettings: (v: boolean) => void
 }
 
 export const useUIStore = create<UIState>((set) => ({
-  showExport:      false,
-  showSettings:    false,
-  setShowExport:   (v) => set({ showExport: v }),
-  setShowSettings: (v) => set({ showSettings: v })
+  showExport:             false,
+  showSettings:           false,
+  showProjectSettings:    false,
+  setShowExport:          (v) => set({ showExport: v }),
+  setShowSettings:        (v) => set({ showSettings: v }),
+  setShowProjectSettings: (v) => set({ showProjectSettings: v })
 }))

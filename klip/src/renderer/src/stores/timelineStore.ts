@@ -60,6 +60,7 @@ interface TimelineState {
   selectClip: (id: string | null) => void
   toggleClipInSelection: (id: string) => void
   moveClip: (id: string, startTime: number) => void
+  moveClips: (moves: { id: string; newStart: number }[]) => void
   trimClip: (id: string, patch: TrimPatch) => void
   trimToPlayhead: (id: string, side: 'start' | 'end') => void
   splitClip: (id: string) => void
@@ -252,6 +253,38 @@ export const useTimelineStore = create<TimelineState>((set) => ({
             return { ...c, startTime: Math.max(0, startTime) }
           return c
         })
+      }
+    }),
+
+  /**
+   * Commit a batch of clip moves in one undo-history entry.
+   * For each clip, also moves its linked pair if it isn't already in the list.
+   */
+  moveClips: (moves) =>
+    set((s) => {
+      const updateMap = new Map<string, number>()
+
+      for (const { id, newStart } of moves) {
+        const clip = s.clips.find((c) => c.id === id)
+        if (!clip) continue
+        updateMap.set(id, Math.max(0, newStart))
+
+        // Move the linked pair (video↔audio) if it isn't already being moved
+        if (clip.linkedClipId && !moves.some((m) => m.id === clip.linkedClipId)) {
+          const linked = s.clips.find((c) => c.id === clip.linkedClipId)
+          if (linked) {
+            const delta = newStart - clip.startTime
+            updateMap.set(clip.linkedClipId, Math.max(0, linked.startTime + delta))
+          }
+        }
+      }
+
+      return {
+        past: [...s.past.slice(-49), snapshot(s)],
+        future: [],
+        clips: s.clips.map((c) =>
+          updateMap.has(c.id) ? { ...c, startTime: updateMap.get(c.id)! } : c
+        )
       }
     }),
 

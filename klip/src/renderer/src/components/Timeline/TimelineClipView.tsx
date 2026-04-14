@@ -7,6 +7,7 @@ import { formatDuration } from '@/lib/mediaUtils'
 import { useTimelineStore } from '@/stores/timelineStore'
 import { useMediaStore } from '@/stores/mediaStore'
 import { useWaveform } from '@/hooks/useWaveform'
+import { dragRegistry } from '@/lib/dragRegistry'
 import WaveformCanvas from './WaveformCanvas'
 import type { TimelineClip, TextSettings, ColorSettings, CropSettings, Transition } from '@/types/timeline'
 
@@ -54,7 +55,8 @@ export default function TimelineClipView({
 }: TimelineClipViewProps): JSX.Element {
   const {
     clips, transitions, playheadTime,
-    moveClip, trimClip, selectClip, toggleClipInSelection,
+    selectedClipIds,
+    moveClip, moveClips, trimClip, selectClip, toggleClipInSelection,
     setClipVolume, setClipSpeed, setClipFades, unlinkClip,
     setTextSettings, setColorSettings, setCropSettings, setClipRole,
     addTransition, removeTransition,
@@ -81,6 +83,15 @@ export default function TimelineClipView({
       animate(widthMV, Math.max(2, clip.duration * pxPerSec), { type: 'spring', stiffness: 500, damping: 38, restDelta: 0.5 })
     }
   }, [clip.startTime, clip.duration, pxPerSec, leftMV, widthMV])
+
+  // Register this clip's leftMV in the shared drag registry whenever it's selected.
+  // The registry lets any clip in a multi-selection drive all others at 60fps.
+  useEffect(() => {
+    if (isSelected) {
+      dragRegistry.register(clip.id, leftMV, clip.startTime)
+      return () => dragRegistry.unregister(clip.id)
+    }
+  }, [isSelected, clip.id, clip.startTime, leftMV])
 
   const style     = CLIP_STYLE[clip.type] ?? CLIP_STYLE.video
   const bg        = clip.type === 'color' && clip.color ? clip.color + 'dd' : style.bg
@@ -119,13 +130,19 @@ export default function TimelineClipView({
     e.preventDefault()
     e.stopPropagation()
 
-    // Ctrl/Cmd+click → toggle this clip in/out of the multi-selection
+    // Ctrl/Cmd+click → toggle multi-selection, don't start a drag
     if (e.ctrlKey || e.metaKey) {
       toggleClipInSelection(clip.id)
       return
     }
 
-    selectClip(clip.id)
+    // If this clip is already part of a multi-selection, keep all clips selected.
+    // Otherwise reset to just this clip so a single-clip drag works as before.
+    const inMultiSelection = selectedClipIds.includes(clip.id) && selectedClipIds.length > 1
+    if (!inMultiSelection) {
+      selectClip(clip.id)
+    }
+
     isDragging.current = true
     setIsDraggingState(true)
 
@@ -137,6 +154,13 @@ export default function TimelineClipView({
       origTrimStart: clip.trimStart
     }
 
+    // For a multi-clip move, snapshot every selected clip's original position
+    // from the drag registry (each selected clip self-registers its leftMV there).
+    const isMultiMove = mode === 'move' && inMultiSelection
+    const multiOrigStarts = isMultiMove
+      ? dragRegistry.snapshotOrigStarts(selectedClipIds)
+      : null
+
     const snapPts = buildSnapPoints()
 
     function onMove(ev: PointerEvent) {
@@ -144,8 +168,15 @@ export default function TimelineClipView({
       const dt = dx / pxPerSec
 
       if (mode === 'move') {
-        const newStart = snapTime(Math.max(0, drag.origStart + dt), snapPts)
-        leftMV.set(newStart * pxPerSec)
+        // Snap is driven by the primary (dragged) clip; other clips follow the same delta
+        const snappedStart = snapTime(Math.max(0, drag.origStart + dt), snapPts)
+        const actualDt     = snappedStart - drag.origStart
+
+        if (isMultiMove && multiOrigStarts) {
+          dragRegistry.applyDelta(multiOrigStarts, actualDt, pxPerSec)
+        } else {
+          leftMV.set(snappedStart * pxPerSec)
+        }
       } else if (mode === 'trim-left') {
         const rawStart    = Math.max(0, drag.origStart + dt)
         const snapped     = snapTime(rawStart, snapPts)
@@ -173,9 +204,20 @@ export default function TimelineClipView({
       if (Math.abs(dx) < 3) return
 
       if (mode === 'move') {
-        const newStart = snapTime(Math.max(0, drag.origStart + dt), snapPts)
-        if (Math.abs(newStart - drag.origStart) > 0.001) moveClip(clip.id, newStart)
-        else leftMV.set(drag.origStart * pxPerSec)
+        const snappedStart = snapTime(Math.max(0, drag.origStart + dt), snapPts)
+        const actualDt     = snappedStart - drag.origStart
+
+        if (isMultiMove && multiOrigStarts) {
+          // Batch-commit all moves in one undo entry
+          const moves = Array.from(multiOrigStarts.entries()).map(([id, orig]) => ({
+            id,
+            newStart: Math.max(0, orig + actualDt)
+          }))
+          moveClips(moves)
+        } else {
+          if (Math.abs(snappedStart - drag.origStart) > 0.001) moveClip(clip.id, snappedStart)
+          else leftMV.set(drag.origStart * pxPerSec)
+        }
       } else if (mode === 'trim-left') {
         const rawStart    = Math.max(0, drag.origStart + dt)
         const snapped     = snapTime(rawStart, snapPts)
