@@ -39,6 +39,7 @@ export default function Timeline(): JSX.Element {
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const [scrollLeft, setScrollLeft] = useState(0)
+  const [containerWidth, setContainerWidth] = useState(800)
   const [isScrubbing, setIsScrubbing] = useState(false)
   const [rulerFormat, setRulerFormat] = useState<'seconds' | 'timecode'>('seconds')
 
@@ -110,6 +111,20 @@ export default function Timeline(): JSX.Element {
 
   const handleScroll = useCallback(() => {
     setScrollLeft(scrollRef.current?.scrollLeft ?? 0)
+  }, [])
+
+  // ── Container width tracking (for virtualization) ─────────────────────────
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    // Seed initial width
+    setContainerWidth(el.clientWidth)
+    const ro = new ResizeObserver(() => {
+      setContainerWidth(el.clientWidth)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
   }, [])
 
   // ── Auto-scroll during playback ───────────────────────────────────────────
@@ -470,6 +485,7 @@ export default function Timeline(): JSX.Element {
               pxPerSec={displayPxPerSec}
               scrollLeft={scrollLeft}
               contentWidth={contentWidth}
+              containerWidth={containerWidth}
               selectedClipId={selectedClipId}
               selectedClipIds={selectedClipIds}
             />

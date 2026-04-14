@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, type ReactNode } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Lock, Unlock, Volume2, VolumeX, Pencil, ArrowLeftRight } from 'lucide-react'
@@ -16,12 +16,18 @@ const TRACK_ACCENT: Record<Track['type'], string> = {
   overlay: '#22d3ee'
 }
 
+/** How many pixels beyond each viewport edge to keep clips rendered.
+ *  Large enough that AnimatePresence exit animations never fire while
+ *  a clip is still within sight, and that fast scroll doesn't pop clips in. */
+const OVERSCAN_PX = 800
+
 interface TrackRowProps {
   track: Track
   clips: TimelineClip[]
   pxPerSec: number
   scrollLeft: number
   contentWidth: number
+  containerWidth: number
   selectedClipId: string | null
   selectedClipIds: string[]
 }
@@ -40,6 +46,7 @@ export default function TrackRow({
   pxPerSec,
   scrollLeft,
   contentWidth,
+  containerWidth,
   selectedClipId,
   selectedClipIds
 }: TrackRowProps): JSX.Element {
@@ -80,6 +87,21 @@ export default function TrackRow({
     }
     return result
   })()
+
+  // ── Viewport-culled clip list ─────────────────────────────────────────────
+  // Only mount clips that overlap the visible viewport (± OVERSCAN_PX buffer).
+  // Selected clips are always kept mounted regardless of position so that
+  // drag/trim operations and keyboard shortcuts work on off-screen selections.
+
+  const visibleClips = useMemo(() => {
+    const viewStart = (scrollLeft - OVERSCAN_PX) / pxPerSec
+    const viewEnd   = (scrollLeft + containerWidth + OVERSCAN_PX) / pxPerSec
+    return clips.filter((clip) => {
+      const clipEnd = clip.startTime + clip.duration
+      const inView  = clip.startTime <= viewEnd && clipEnd >= viewStart
+      return inView || selectedClipIds.includes(clip.id)
+    })
+  }, [clips, scrollLeft, pxPerSec, containerWidth, selectedClipIds])
 
   // ── Drag-and-drop ──────────────────────────────────────────────────────────
 
@@ -361,8 +383,13 @@ export default function TrackRow({
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
-        {/* Subtle second-interval grid lines */}
-        <GridLines pxPerSec={pxPerSec} height={height} contentWidth={contentWidth} />
+        {/* Subtle second-interval grid lines — only rendered in viewport */}
+        <GridLines
+          pxPerSec={pxPerSec}
+          height={height}
+          scrollLeft={scrollLeft}
+          viewportWidth={containerWidth}
+        />
 
         {/* ── Gap indicators ──────────────────────────────────────────── */}
         {gaps.map((gap) => (
@@ -399,7 +426,7 @@ export default function TrackRow({
         ))}
 
         <AnimatePresence>
-          {clips.map((clip) => (
+          {visibleClips.map((clip) => (
             <TimelineClipView
               key={clip.id}
               clip={clip}
@@ -561,15 +588,19 @@ function TrackIconButton({
   )
 }
 
-/** Subtle vertical lines at each major/minor tick position. */
+/** Subtle vertical lines at each major/minor tick position.
+ *  Only renders lines inside the current viewport to avoid thousands of
+ *  DOM nodes on long timelines. */
 function GridLines({
   pxPerSec,
   height,
-  contentWidth
+  scrollLeft,
+  viewportWidth
 }: {
   pxPerSec: number
   height: number
-  contentWidth: number
+  scrollLeft: number
+  viewportWidth: number
 }): JSX.Element | null {
   if (pxPerSec < 10 || pxPerSec > 500) return null
 
@@ -578,10 +609,14 @@ function GridLines({
   else if (pxPerSec < 50) interval = 5
   else if (pxPerSec < 100) interval = 2
 
-  const totalSecs = contentWidth / pxPerSec
+  // Only generate lines that fall within the visible viewport (± 1 interval buffer)
+  const visStart = Math.max(0, scrollLeft / pxPerSec - interval)
+  const visEnd   = (scrollLeft + viewportWidth) / pxPerSec + interval
+  const firstT   = Math.ceil(visStart / interval) * interval
+
   const lines: number[] = []
-  for (let t = interval; t < totalSecs; t += interval) {
-    lines.push(t)
+  for (let t = firstT; t <= visEnd; t += interval) {
+    if (t > 0) lines.push(t)
   }
 
   return (
