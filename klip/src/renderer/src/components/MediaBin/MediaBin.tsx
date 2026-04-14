@@ -252,6 +252,7 @@ export default function MediaBin(): JSX.Element {
 
   return (
     <div
+      data-tutorial="media-bin"
       className="flex flex-col h-full relative"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -280,6 +281,7 @@ export default function MediaBin(): JSX.Element {
             label="Import"
             onClick={handleOpenDialog}
             accent
+            dataTutorial="import-btn"
           />
         </div>
       </div>
@@ -399,18 +401,21 @@ function HeaderButton({
   title,
   label,
   onClick,
-  accent = false
+  accent = false,
+  dataTutorial
 }: {
   icon: ReactNode
   title: string
   label?: string
   onClick: () => void
   accent?: boolean
+  dataTutorial?: string
 }): JSX.Element {
   return (
     <button
       onClick={onClick}
       title={title}
+      data-tutorial={dataTutorial}
       className={cn(
         'flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors duration-100 active:scale-[0.96]',
         accent

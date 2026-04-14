@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import { useMediaStore } from '@/stores/mediaStore'
 import { useTimelineStore } from '@/stores/timelineStore'
@@ -14,7 +14,7 @@ import SettingsDialog from '@/components/Settings/SettingsDialog'
 import ProjectSettingsModal from '@/components/Settings/ProjectSettingsModal'
 import SourceClipViewer from '@/components/MediaBin/SourceClipViewer'
 import CommandPalette from '@/components/CommandPalette/CommandPalette'
-import { useState } from 'react'
+import TutorialOverlay from '@/components/Tutorial/TutorialOverlay'
 import type { TimelineClip, TextSettings } from '@/types/timeline'
 
 const SIDEBAR_MIN = 180
@@ -42,6 +42,7 @@ const DEFAULT_TEXT_SETTINGS: TextSettings = {
 export default function AppLayout(): JSX.Element {
   const [sidebarWidth, setSidebarWidth]     = useState(SIDEBAR_DEFAULT)
   const [timelineHeight, setTimelineHeight] = useState(TIMELINE_DEFAULT)
+  const [showShortcuts, setShowShortcuts]   = useState(false)
   const { checkMissingFiles } = useMediaStore()
 
   const { tracks, playheadTime, addClip } = useTimelineStore()
@@ -92,6 +93,19 @@ export default function AppLayout(): JSX.Element {
     return () => window.removeEventListener('klip:add-text-clip', handler)
   }, [handleAddTextClip])
 
+  // ? key opens keyboard cheat sheet
+  useEffect(() => {
+    const handler = (e: KeyboardEvent): void => {
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        setShowShortcuts((v) => !v)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
+
   return (
     <div className="flex flex-col h-full bg-[var(--bg-base)]">
       <TopToolbar
@@ -99,6 +113,7 @@ export default function AppLayout(): JSX.Element {
         onAddTextClip={handleAddTextClip}
         onSettingsClick={() => setShowSettings(true)}
         onProjectSettingsClick={() => setShowProjectSettings(true)}
+        onHelpClick={() => setShowShortcuts(true)}
       />
 
       <AnimatePresence>
@@ -109,6 +124,15 @@ export default function AppLayout(): JSX.Element {
         {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {showShortcuts && (
+          <SettingsDialog
+            onClose={() => setShowShortcuts(false)}
+            initialTab="shortcuts"
+          />
+        )}
+      </AnimatePresence>
+
       <ProjectSettingsModal
         open={showProjectSettings}
         onClose={() => setShowProjectSettings(false)}
@@ -116,6 +140,9 @@ export default function AppLayout(): JSX.Element {
 
       {/* Command palette — portal, always mounted, renders when open */}
       <CommandPalette />
+
+      {/* First-launch walkthrough */}
+      <TutorialOverlay />
 
       <SourceClipViewer />
 
@@ -141,6 +168,7 @@ export default function AppLayout(): JSX.Element {
 
           {/* Timeline — fixed height, resizable */}
           <div
+            data-tutorial="timeline-panel"
             className="shrink-0 bg-[var(--bg-surface)] border-t border-[var(--border-subtle)] overflow-hidden"
             style={{ height: timelineHeight }}
           >

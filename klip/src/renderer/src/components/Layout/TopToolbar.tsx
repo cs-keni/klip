@@ -11,6 +11,7 @@ interface TopToolbarProps {
   onAddTextClip: () => void
   onSettingsClick: () => void
   onProjectSettingsClick: () => void
+  onHelpClick: () => void
 }
 
 const RESOLUTION_LABEL: Record<string, string> = {
@@ -23,7 +24,8 @@ export default function TopToolbar({
   onExportClick,
   onAddTextClip,
   onSettingsClick,
-  onProjectSettingsClick
+  onProjectSettingsClick,
+  onHelpClick
 }: TopToolbarProps): JSX.Element {
   const { undo, redo } = useTimelineStore()
   const { settings } = useProjectStore()
@@ -85,6 +87,7 @@ export default function TopToolbar({
       {/* Export CTA */}
       <Tooltip content="Export video">
         <button
+          data-tutorial="export-btn"
           onClick={onExportClick}
           className="flex items-center gap-1.5 px-3 h-7 rounded text-xs font-semibold bg-[var(--accent)] text-white hover:bg-[var(--accent-light)] transition-colors duration-100 active:scale-[0.96] shrink-0"
         >
@@ -99,7 +102,7 @@ export default function TopToolbar({
       <ToolGroup>
         <ToolBtn icon={<Save size={14} />} label="Save  Ctrl+S" onClick={saveProject} />
         <ToolBtn icon={<Settings size={14} />} label="Settings" onClick={onSettingsClick} />
-        <ToolBtn icon={<HelpCircle size={14} />} label="Help  Shift+?" />
+        <ToolBtn icon={<HelpCircle size={14} />} label="Keyboard shortcuts  ?" onClick={onHelpClick} />
       </ToolGroup>
     </div>
   )

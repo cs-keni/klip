@@ -25,6 +25,7 @@ export default function Sidebar(): JSX.Element {
           onClick={() => setActiveTab('music')}
           icon={<Music size={13} />}
           label="Music"
+          dataTutorial="music-tab"
         />
       </div>
 
@@ -50,16 +51,19 @@ function SidebarTab({
   active,
   onClick,
   icon,
-  label
+  label,
+  dataTutorial
 }: {
   active: boolean
   onClick: () => void
   icon: ReactNode
   label: string
+  dataTutorial?: string
 }): JSX.Element {
   return (
     <button
       onClick={onClick}
+      data-tutorial={dataTutorial}
       className={cn(
         'flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium',
         'transition-colors duration-100 border-b-2 -mb-[1px]',

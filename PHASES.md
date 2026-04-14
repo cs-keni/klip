@@ -376,16 +376,16 @@ Aesthetic: dark, modern, fluid — closer to Figma/Linear than Blender.
 > Goal: Make the app feel finished — easy to learn, tight, fast, and satisfying to use every session.
 
 **Tutorial & Onboarding:**
-- [ ] First-launch interactive walkthrough — runs automatically the first time the app opens
-  - [ ] Spotlight overlay highlights specific UI areas one at a time (rest of screen dims)
-  - [ ] Step-by-step narration: Welcome → Import a clip → Source Viewer & In/Out points → Add to timeline → Trim → Add music → Add text overlay → Export
-  - [ ] "Next" / "Skip" / "Skip All" controls — never forced
-  - [ ] Animated arrows and callouts guide the eye to each element
-- [ ] Tutorial accessible at any time from Help menu ("Restart Tutorial")
+- [x] First-launch interactive walkthrough — runs automatically the first time the app opens
+  - [x] Spotlight overlay highlights specific UI areas one at a time (rest of screen dims)
+  - [x] Step-by-step narration: Welcome → Import → Media Bin → Timeline → Shortcuts → Music → Export (7 steps)
+  - [x] "Next" / "Back" / "Skip All" controls — never forced; step dot-progress indicator
+  - [x] Animated card transitions, spotlight box-shadow highlight with accent border
+- [x] Tutorial accessible at any time from Settings → App → "Restart Tutorial"
 - [ ] In-app Help panel (? icon or Shift+?) — searchable descriptions of every feature
   - [ ] Each entry has a short description and a visual GIF or diagram
 - [ ] "What's this?" hover mode — toggle it on, then hover any UI element to see a detailed tooltip explaining exactly what it does and its keyboard shortcut
-- [ ] Keyboard shortcut cheat sheet — one page, printable, accessible from Help menu
+- [x] Keyboard shortcut cheat sheet — accessible from Help (? key) button, opens Settings → Shortcuts tab
 
 **Settings Panel:**
 - [x] App settings: theme (dark only for now), default export path, proxy cache management
@@ -393,7 +393,7 @@ Aesthetic: dark, modern, fluid — closer to Figma/Linear than Blender.
 - [x] Keyboard shortcuts viewer (updated with Ctrl+K entry)
 - [x] FFmpeg path override (for users who want to use a system FFmpeg)
 - [x] Music library folder location setting
-- [ ] Tutorial settings: option to replay the tutorial or reset onboarding state
+- [x] Tutorial settings: "Restart Tutorial" button in App tab resets `hasSeenWalkthrough`
 
 **General QoL:**
 - [x] Auto-save every 2 minutes to a `.autosave` project file (`klip-autosave.klip` in userData)

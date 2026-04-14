@@ -8,12 +8,15 @@ interface AppSettings {
   snapByDefault: boolean
   /** Root folder for the music library — import dialog opens here. Null = system default. */
   musicLibraryFolder: string | null
+  /** Whether the user has completed or skipped the first-launch walkthrough. */
+  hasSeenWalkthrough: boolean
 }
 
 interface AppSettingsState extends AppSettings {
   setDefaultExportFolder: (folder: string | null) => void
   setSnapByDefault: (v: boolean) => void
   setMusicLibraryFolder: (folder: string | null) => void
+  setHasSeenWalkthrough: (v: boolean) => void
 }
 
 export const useAppSettingsStore = create<AppSettingsState>()(
@@ -22,10 +25,12 @@ export const useAppSettingsStore = create<AppSettingsState>()(
       defaultExportFolder: null,
       snapByDefault:       true,
       musicLibraryFolder:  null,
+      hasSeenWalkthrough:  false,
 
       setDefaultExportFolder: (folder) => set({ defaultExportFolder: folder }),
       setSnapByDefault:       (v)      => set({ snapByDefault: v }),
-      setMusicLibraryFolder:  (folder) => set({ musicLibraryFolder: folder })
+      setMusicLibraryFolder:  (folder) => set({ musicLibraryFolder: folder }),
+      setHasSeenWalkthrough:  (v)      => set({ hasSeenWalkthrough: v })
     }),
     {
       name: 'klip-app-settings'

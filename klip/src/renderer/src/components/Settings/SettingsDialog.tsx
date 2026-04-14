@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   X, FolderOpen, Sliders, Keyboard, AppWindow, Layers, Wrench,
-  HardDrive, Trash2, CheckCircle2, AlertCircle
+  HardDrive, Trash2, CheckCircle2, AlertCircle, RotateCcw
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useProjectStore, type Resolution, type FrameRate, type AspectRatio } from '@/stores/projectStore'
@@ -90,10 +90,11 @@ const SHORTCUT_GROUPS: { heading: string; rows: { label: string; keys: string[] 
 
 interface SettingsDialogProps {
   onClose: () => void
+  initialTab?: Tab
 }
 
-export default function SettingsDialog({ onClose }: SettingsDialogProps): JSX.Element {
-  const [activeTab, setActiveTab] = useState<Tab>('project')
+export default function SettingsDialog({ onClose, initialTab }: SettingsDialogProps): JSX.Element {
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab ?? 'project')
 
   const dialog = (
     <motion.div
@@ -261,7 +262,7 @@ function formatBytes(bytes: number): string {
 }
 
 function AppTab(): JSX.Element {
-  const { defaultExportFolder, setDefaultExportFolder, musicLibraryFolder, setMusicLibraryFolder } = useAppSettingsStore()
+  const { defaultExportFolder, setDefaultExportFolder, musicLibraryFolder, setMusicLibraryFolder, setHasSeenWalkthrough } = useAppSettingsStore()
   const [cacheInfo, setCacheInfo] = useState<{ count: number; totalBytes: number } | null>(null)
   const [clearing, setClearing] = useState(false)
 
@@ -385,6 +386,20 @@ function AppTab(): JSX.Element {
             {clearing ? 'Clearing…' : 'Clear Cache'}
           </button>
         </div>
+      </SettingRow>
+
+      {/* Onboarding */}
+      <SettingRow
+        label="Onboarding"
+        description="Replay the first-launch walkthrough at any time."
+      >
+        <button
+          onClick={() => setHasSeenWalkthrough(false)}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] transition-colors duration-100 active:scale-[0.97]"
+        >
+          <RotateCcw size={12} />
+          Restart Tutorial
+        </button>
       </SettingRow>
 
       {/* Theme (read-only for now) */}
