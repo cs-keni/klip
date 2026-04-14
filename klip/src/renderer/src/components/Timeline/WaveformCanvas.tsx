@@ -10,9 +10,14 @@ interface WaveformCanvasProps {
   opacity?: number
 }
 
+function easeOutCubic(t: number): number {
+  return 1 - (1 - t) ** 3
+}
+
 /**
  * Canvas-based waveform renderer.
- * One vertical bar per pixel — redraws automatically when resized via ResizeObserver.
+ * Bars grow up from the baseline when peaks first arrive (450ms ease-out),
+ * then redraw instantly on resize. One bar per pixel.
  */
 export default function WaveformCanvas({
   peaks,
@@ -22,12 +27,19 @@ export default function WaveformCanvas({
   opacity = 0.45
 }: WaveformCanvasProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const rafRef    = useRef(0)
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
 
-    function draw() {
+    // Cancel any in-progress grow animation from a previous peaks value
+    cancelAnimationFrame(rafRef.current)
+
+    const GROW_DURATION = 450 // ms
+    const startTime = performance.now()
+
+    function drawAtScale(scale: number) {
       const w = canvas!.offsetWidth
       const h = canvas!.offsetHeight
       if (w === 0 || h === 0) return
@@ -41,25 +53,45 @@ export default function WaveformCanvas({
       ctx.clearRect(0, 0, w, h)
       ctx.fillStyle = color
 
-      const startIdx  = Math.floor(trimStart * PEAKS_PER_SEC)
-      const numPeaks  = Math.ceil(duration   * PEAKS_PER_SEC)
-      const centerY   = h / 2
+      const startIdx = Math.floor(trimStart * PEAKS_PER_SEC)
+      const numPeaks = Math.ceil(duration   * PEAKS_PER_SEC)
+      const centerY  = h / 2
 
       for (let px = 0; px < w; px++) {
         const peakIdx = startIdx + Math.floor((px / w) * numPeaks)
         if (peakIdx >= peaks.length) break
-
         const amp  = peaks[peakIdx]
-        const barH = Math.max(1, amp * h * 0.9)
+        const barH = Math.max(1, amp * h * 0.9 * scale)
         ctx.fillRect(px, centerY - barH / 2, 1, barH)
       }
     }
 
-    draw()
+    function growFrame(now: number) {
+      const elapsed  = now - startTime
+      const progress = Math.min(1, elapsed / GROW_DURATION)
+      const scale    = easeOutCubic(progress)
 
-    const ro = new ResizeObserver(draw)
+      drawAtScale(scale)
+
+      if (progress < 1) {
+        rafRef.current = requestAnimationFrame(growFrame)
+      }
+    }
+
+    // Kick off the grow animation
+    rafRef.current = requestAnimationFrame(growFrame)
+
+    // On resize, draw at full scale immediately (skip grow)
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(rafRef.current)
+      drawAtScale(1)
+    })
     ro.observe(canvas)
-    return () => ro.disconnect()
+
+    return () => {
+      cancelAnimationFrame(rafRef.current)
+      ro.disconnect()
+    }
   }, [peaks, trimStart, duration, color])
 
   return (

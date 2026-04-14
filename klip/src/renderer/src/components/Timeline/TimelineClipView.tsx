@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { motion, useMotionValue, AnimatePresence } from 'framer-motion'
+import { motion, useMotionValue, AnimatePresence, animate } from 'framer-motion'
 import { Volume2, Type, Zap, Palette, Crop, ArrowRightLeft, X, Unlink, Link2, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatDuration } from '@/lib/mediaUtils'
@@ -65,17 +65,20 @@ export default function TimelineClipView({
   const mediaClip = mediaClips.find((m) => m.id === clip.mediaClipId) ?? null
 
   // ── Waveform (audio + video clips) ──────────────────────────────────────────
-  const { peaks } = useWaveform(mediaClip?.path ?? null, clip.type, clip.id)
+  const { peaks, loading: waveformLoading } = useWaveform(mediaClip?.path ?? null, clip.type, clip.id)
 
   // ── Motion values for 60fps drag ────────────────────────────────────────────
   const leftMV  = useMotionValue(clip.startTime * pxPerSec)
   const widthMV = useMotionValue(Math.max(2, clip.duration * pxPerSec))
 
   const isDragging = useRef(false)
+  const [isDraggingState, setIsDraggingState] = useState(false)
+
   useEffect(() => {
     if (!isDragging.current) {
-      leftMV.set(clip.startTime * pxPerSec)
-      widthMV.set(Math.max(2, clip.duration * pxPerSec))
+      // Spring-animate position/size changes so zoom transitions and undo/redo feel smooth
+      animate(leftMV, clip.startTime * pxPerSec, { type: 'spring', stiffness: 500, damping: 38, restDelta: 0.5 })
+      animate(widthMV, Math.max(2, clip.duration * pxPerSec), { type: 'spring', stiffness: 500, damping: 38, restDelta: 0.5 })
     }
   }, [clip.startTime, clip.duration, pxPerSec, leftMV, widthMV])
 
@@ -124,6 +127,7 @@ export default function TimelineClipView({
 
     selectClip(clip.id)
     isDragging.current = true
+    setIsDraggingState(true)
 
     const drag: DragState = {
       mode,
@@ -162,6 +166,7 @@ export default function TimelineClipView({
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup',   onUp)
       isDragging.current = false
+      setIsDraggingState(false)
 
       const dx = ev.clientX - drag.startX
       const dt = dx / pxPerSec
@@ -209,11 +214,11 @@ export default function TimelineClipView({
   return (
     <>
       <motion.div
-        className={cn('absolute select-none touch-none', isSelected ? 'z-20' : 'z-10', isLocked && 'pointer-events-none opacity-70')}
+        className={cn('absolute select-none touch-none', isDraggingState ? 'z-30' : isSelected ? 'z-20' : 'z-10', isLocked && 'pointer-events-none opacity-70')}
         style={{ left: leftMV, width: widthMV, top: PADDING, height: clipHeight }}
-        initial={{ opacity: 0, scaleX: 0.92 }}
+        initial={{ opacity: 0, scaleX: 0.88 }}
         animate={{ opacity: 1, scaleX: 1 }}
-        exit={{ opacity: 0, scaleX: 0.92, transition: { duration: 0.1 } }}
+        exit={{ opacity: 0, scaleX: 0, originX: 0, transition: { duration: 0.16, ease: [0.4, 0, 1, 1] } }}
         transition={{ type: 'spring', stiffness: 400, damping: 32 }}
         onClick={(e) => e.stopPropagation()}
         onContextMenu={(e) => {
@@ -242,12 +247,16 @@ export default function TimelineClipView({
             background:  bg,
             borderWidth: 1,
             borderStyle: 'solid',
-            borderColor: isSelected ? style.border : 'rgba(255,255,255,0.12)',
-            boxShadow: isPrimary
-              ? `0 0 0 1px ${style.border}, 0 0 8px ${style.border}44`
-              : isSelected
-                ? `0 0 0 1px ${style.border}88`
-                : '0 1px 3px rgba(0,0,0,0.4)'
+            borderColor: isDraggingState ? style.border : isSelected ? style.border : 'rgba(255,255,255,0.12)',
+            boxShadow: isDraggingState
+              ? `0 14px 36px rgba(0,0,0,0.55), 0 0 0 1px ${style.border}99`
+              : isPrimary
+                ? `0 0 0 1px ${style.border}, 0 0 8px ${style.border}44`
+                : isSelected
+                  ? `0 0 0 1px ${style.border}88`
+                  : '0 1px 3px rgba(0,0,0,0.4)',
+            opacity: isDraggingState ? 0.72 : 1,
+            transition: 'opacity 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease'
           }}
           onPointerDown={(e) => startDrag(e, 'move')}
         >
@@ -256,6 +265,25 @@ export default function TimelineClipView({
             className="absolute inset-x-0 top-0 h-px pointer-events-none"
             style={{ background: `${style.border}55` }}
           />
+
+          {/* Waveform skeleton while audio is loading */}
+          {waveformLoading && !peaks && (clip.type === 'audio' || clip.type === 'video') && dispWidth > 24 && (
+            <div className="absolute inset-0 pointer-events-none overflow-hidden flex items-center gap-px px-1">
+              {Array.from({ length: 28 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="flex-1 rounded-sm animate-pulse"
+                  style={{
+                    height: `${16 + Math.abs(Math.sin(i * 1.4 + 0.8)) * 28}%`,
+                    background: style.text,
+                    opacity: 0.11,
+                    animationDelay: `${(i % 6) * 120}ms`,
+                    animationDuration: '1.4s'
+                  }}
+                />
+              ))}
+            </div>
+          )}
 
           {/* Waveform — audio and video clips */}
           {peaks && (

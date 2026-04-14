@@ -402,7 +402,9 @@ Aesthetic: dark, modern, fluid — closer to Figma/Linear than Blender.
 - [x] Ctrl+S to save, Ctrl+Shift+S to save as
 - [x] Project name shown in titlebar
 - [x] Recent projects on welcome screen (last 5, with thumbnail)
-- [ ] Context menus throughout (right-click on everything that should have one)
+- [x] Context menus throughout (right-click on everything that should have one)
+  - [x] Timeline clips, track headers, gaps, media bin clips, preview canvas, markers — all complete
+  - [x] Music library tracks — right-click: Play/Stop Preview, Add to Timeline, Reveal in Explorer, Remove
 - [x] Tooltip system — hover any button for 300ms to see a label + keyboard shortcut (already built in Phase 6)
 - [x] Global search / command palette (Ctrl+K) — search clips, effects, settings, actions
 - [x] Clip markers — drop a pin on the timeline with a label (M key; double-click to rename, right-click to delete)
@@ -411,7 +413,7 @@ Aesthetic: dark, modern, fluid — closer to Figma/Linear than Blender.
 
 **Performance:**
 - [x] Waveform cache on disk — don't recompute on every project open (done in Phase 5b)
-- [ ] Proxy file cache management — settings to clear old proxies, see disk usage
+- [x] Proxy file cache management — settings to clear old proxies, see disk usage
 
 **Animations & Feel:**
 Every interaction should feel responsive and alive — not flashy, just smooth and deliberate.
@@ -419,17 +421,17 @@ Every interaction should feel responsive and alive — not flashy, just smooth a
 - [x] Button press: scale down slightly (0.96) on mousedown, spring back on release (`active:scale-[0.96]` on toolbar buttons)
 - [x] Panel open/close: slide in/out with a fast ease-out (150–200ms) (Framer Motion across all panels)
 - [x] Sidebar tab switch: content cross-fades (AnimatePresence mode="wait" in Sidebar)
-- [ ] Clip drag: ghost/shadow follows cursor; original clip dims slightly
-- [ ] Clip drop: landing clip bounces softly into place (spring)
-- [ ] Clip delete: clip collapses horizontally before disappearing
+- [x] Clip drag: ghost/shadow follows cursor; original clip dims slightly (opacity 0.72 + elevated shadow during drag)
+- [x] Clip drop: landing clip bounces softly into place (spring — position changes animate with spring stiffness 500/damping 38, applies to zoom too)
+- [x] Clip delete: clip collapses horizontally before disappearing (scaleX 0, originX left, 160ms ease-in)
 - [ ] Timeline zoom: ruler and clips scale smoothly, not in jumps
 - [ ] Timeline scroll: inertia (coasts after fast scroll, decelerates naturally)
 - [x] Modal open: scale up from 95% with fade-in (200ms); close is reverse (SettingsDialog, ExportDialog, CrashRecoveryDialog)
 - [x] Notification/toast: slides in from bottom-right, auto-dismisses with a progress bar underneath (Toaster system built)
 - [x] Staggered entrance: when media bin loads multiple clips, they appear one by one (30ms stagger)
-- [ ] Loading skeletons: shimmer animation on all loading states before content appears
+- [x] Loading skeletons: shimmer animation on all loading states before content appears (SkeletonCard in media bin; animated placeholder bars in timeline clips while waveform loads)
 - [x] Welcome screen: recent projects fade in staggered on load (stagger delay on RecentRow)
-- [ ] Waveform: bars grow up from the baseline progressively as data loads
+- [x] Waveform: bars grow up from the baseline progressively as data loads (450ms ease-out cubic, rAF-driven canvas animation)
 - [x] Export progress bar: smooth fill, not chunky jumps (gradient animation in ExportDialog)
 - [x] Playhead scrub: snappy, zero lag — this is the most-used interaction and must feel instant
 

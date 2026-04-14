@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, Search, Play, Pause, Trash2, Music, Tag, X } from 'lucide-react'
+import { Upload, Search, Play, Pause, Trash2, Music, Tag, X, Plus, FolderOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip } from '@/components/ui/tooltip'
 import { useMusicStore, type MusicTrack } from '@/stores/musicStore'
@@ -294,6 +295,8 @@ function TrackRow({
   const { clips: mediaClips, addClip: addMediaClip } = useMediaStore()
   const { tracks, clips: tlClips, addClip: addTlClip, playheadTime } = useTimelineStore()
 
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
+
   // ── Drag to timeline ──────────────────────────────────────────────────────
 
   const handleDragStart = useCallback((e: React.DragEvent) => {
@@ -357,6 +360,10 @@ function TrackRow({
       draggable
       onDragStart={handleDragStart}
       className="cursor-grab active:cursor-grabbing"
+      onContextMenu={(e) => {
+        e.preventDefault()
+        setCtxMenu({ x: e.clientX, y: e.clientY })
+      }}
     >
     <motion.div
       layout
@@ -494,6 +501,60 @@ function TrackRow({
         )}
       </AnimatePresence>
     </motion.div>
+
+    {/* ── Context menu ──────────────────────────────────────────────────────── */}
+    <AnimatePresence>
+      {ctxMenu && createPortal(
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-[998]"
+            onPointerDown={() => setCtxMenu(null)}
+          />
+          <motion.div
+            className="fixed z-[999] min-w-[168px] rounded-lg overflow-hidden border border-[var(--border)] bg-[var(--bg-elevated)] shadow-xl"
+            style={{ left: ctxMenu.x, top: ctxMenu.y }}
+            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+            transition={{ duration: 0.1 }}
+          >
+            <div className="py-1">
+              <button
+                className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] transition-colors"
+                onClick={() => { onPlay(); setCtxMenu(null) }}
+              >
+                {isPlaying ? <Pause size={12} className="text-[var(--accent-bright)]" /> : <Play size={12} className="ml-0.5 text-[var(--accent-bright)]" />}
+                {isPlaying ? 'Stop Preview' : 'Play Preview'}
+              </button>
+              <button
+                className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] transition-colors"
+                onClick={() => { handleAddToTimeline(); setCtxMenu(null) }}
+              >
+                <Plus size={12} className="text-[var(--text-muted)]" />
+                Add to Timeline
+              </button>
+              <div className="my-1 border-t border-[var(--border-subtle)]" />
+              <button
+                className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-overlay)] transition-colors"
+                onClick={() => { window.api.media.revealInExplorer(track.filePath); setCtxMenu(null) }}
+              >
+                <FolderOpen size={12} className="text-[var(--text-muted)]" />
+                Reveal in Explorer
+              </button>
+              <button
+                className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[12px] text-red-400 hover:bg-red-500/10 transition-colors"
+                onClick={() => { onRemove(); setCtxMenu(null) }}
+              >
+                <Trash2 size={12} />
+                Remove from Library
+              </button>
+            </div>
+          </motion.div>
+        </>,
+        document.body
+      )}
+    </AnimatePresence>
     </div>
   )
 }
