@@ -427,7 +427,7 @@ npx vitest run --grep "timelineStore"
 
 ---
 
-## Phase 3 — Component Tests (~110 tests)
+## Phase 3 — Component Tests (~110 tests) ✅ IMPLEMENTED (§3.1–3.23, 128 component + 99 hooks = 227 tests)
 
 > React Testing Library. Mock `window.api` (IPC bridge). Test behavior, not implementation.
 
@@ -723,42 +723,45 @@ npx vitest run --grep "timelineStore"
 
 ---
 
-### 3.21 `useProjectIO` hook (~8 tests)
+### 3.21 `useProjectIO` hook (~8 tests) ✅ IMPLEMENTED
 
 > Mount via a minimal wrapper component. Mock `window.api` and Zustand stores.
+> **File:** `src/tests/hooks/hooks.test.tsx`
 
-- [ ] Hook is stable — mounting does not immediately mark the project dirty
-- [ ] A timeline change after 500ms (after the liveness guard) sets `hasUnsavedChanges === true`
-- [ ] A timeline change within the first 500ms does NOT set `hasUnsavedChanges`
-- [ ] `Ctrl+S` keydown calls `saveProject` when a project path exists
-- [ ] `Ctrl+S` with no project path calls `saveProjectAs` (opens save dialog)
-- [ ] `Ctrl+Shift+S` always calls `saveProjectAs` regardless of existing path
-- [ ] Auto-save fires `saveAutosave` when `hasUnsavedChanges === true` after `AUTOSAVE_INTERVAL_MS`
-- [ ] Auto-save does NOT fire when `hasUnsavedChanges === false`
-
----
-
-### 3.22 `useWaveform` hook (~6 tests)
-
-> Test in jsdom; mock `fetch` and `AudioContext`.
-
-- [ ] Returns `{ peaks: null, loading: true }` on initial mount before data loads
-- [ ] Returns `{ peaks: Float32Array, loading: false }` after a successful fetch
-- [ ] Second mount for the same `filePath` returns cached peaks immediately (no re-fetch)
-- [ ] Returns `{ peaks: null, loading: false }` when `filePath` is null/undefined
-- [ ] Returns `{ peaks: null, loading: false }` when fetch fails (no crash)
-- [ ] Changing `filePath` triggers a new fetch and resets `loading` to `true`
+- [x] Hook is stable — mounting does not immediately mark the project dirty
+- [x] A timeline change after 500ms (after the liveness guard) sets `hasUnsavedChanges === true`
+- [x] A timeline change within the first 500ms does NOT set `hasUnsavedChanges`
+- [x] `Ctrl+S` keydown calls `saveProject`
+- [x] `Ctrl+S` calls `saveProject` regardless of whether a project path is set (path handled internally by saveProject)
+- [x] `Ctrl+Shift+S` always calls `saveProjectAs` regardless of existing path
+- [x] Auto-save fires `window.api.project.autosave` when `hasUnsavedChanges === true` after `AUTOSAVE_INTERVAL_MS`
+- [x] Auto-save does NOT fire when `hasUnsavedChanges === false`
 
 ---
 
-### 3.23 `useProxyEvents` hook (~4 tests)
+### 3.22 `useWaveform` hook (~6 tests) ✅ IMPLEMENTED
+
+> Test in jsdom; mock `window.api.waveform.extract` (video path).
+> **File:** `src/tests/hooks/hooks.test.tsx`
+
+- [x] Returns `{ peaks: null, loading: false }` when `filePath` is null/undefined
+- [x] Returns `{ peaks: null, loading: true }` on initial mount before data loads
+- [x] Returns `{ peaks: Float32Array, loading: false }` after a successful fetch
+- [x] Second mount for the same `filePath` returns cached peaks immediately (no re-fetch)
+- [x] Returns `{ peaks: null, loading: false }` when extract returns null (failure)
+- [x] Changing `filePath` resets `loading` to `true` and triggers a new fetch
+
+---
+
+### 3.23 `useProxyEvents` hook (~4 tests) ✅ IMPLEMENTED
 
 > Test by triggering the mocked `window.api` event emitter.
+> **File:** `src/tests/hooks/hooks.test.tsx`
 
-- [ ] Subscribes to `proxy:progress` events on mount
-- [ ] Receiving a `proxy:progress` event updates `mediaStore.updateClip` with the new progress
-- [ ] Receiving `proxy:complete` sets `proxyReady: true` on the correct clip
-- [ ] Unsubscribes from events on unmount (cleanup called)
+- [x] Subscribes to `proxy:progress`, `proxy:done`, and `proxy:error` events on mount
+- [x] Receiving a `proxy:progress` event updates clip `proxyStatus` and `proxyProgress` in mediaStore
+- [x] Receiving a `proxy:done` event sets `proxyStatus: 'ready'` and records `proxyPath` on the correct clip
+- [x] Unsubscribes from all three proxy events on unmount (cleanup called)
 
 ---
 

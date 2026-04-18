@@ -61,3 +61,10 @@ export const useAnimation   = () => ({ start: () => Promise.resolve(), stop: () 
 export const useScroll      = () => ({ scrollY: { get: () => 0 } })
 export const useVelocity    = () => ({ get: () => 0 })
 export const useDragControls = () => ({ start: () => {} })
+
+// Imperative animate() API — no-op in tests
+export const animate = (_el: unknown, _kf: unknown, _opts?: unknown): unknown => ({
+  then: (fn?: () => void) => { fn?.(); return Promise.resolve() },
+  stop: () => {},
+  complete: () => {}
+})
