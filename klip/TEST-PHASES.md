@@ -62,9 +62,10 @@ npx vitest run --grep "timelineStore"
 
 ---
 
-## Phase 1 — Unit: Pure Functions & Utilities (~110 tests)
+## Phase 1 — Unit: Pure Functions & Utilities (~110 tests) ✅ IMPLEMENTED
 
 > No DOM, no stores, no IPC. Input → expected output.
+> **Files:** `src/tests/unit/media-utils.test.ts` (45 tests) · `src/tests/unit/static-data.test.ts` (28 tests) · `src/tests/unit/signals.test.ts` (21 tests) · `src/tests/unit/project-io.test.ts` (27 tests) · `src/tests/unit/property-based.test.ts` (24 tests) · 145 new tests, 314 total passing.
 
 ### 1.1 `mediaUtils.ts` — formatting helpers (~25 tests)
 
@@ -256,10 +257,11 @@ npx vitest run --grep "timelineStore"
 
 ---
 
-## Phase 2 — Unit: Zustand Store Actions (~90 tests)
+## Phase 2 — Unit: Zustand Store Actions (~90 tests) ✅ IMPLEMENTED
 
 > Construct store instances directly. Assert state transitions synchronously.
 > No DOM, no IPC, no React.
+> **Files:** `src/tests/stores/simple-stores.test.ts` (35 tests) · `src/tests/stores/timeline-store.test.ts` (77 tests) · `src/tests/stores/media-project-stores.test.ts` (33 tests) · 145 store tests, 169 total passing.
 
 ### 2.1 `timelineStore` — clip lifecycle (~25 tests)
 
