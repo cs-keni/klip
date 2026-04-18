@@ -71,12 +71,19 @@ function cardPosition(rect: Rect, placement: 'top' | 'bottom' | 'left' | 'right'
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
+const cardVariants = {
+  initial: (dir: number) => ({ opacity: 0, x: dir * 56, scale: 0.96 }),
+  animate: { opacity: 1, x: 0, scale: 1 },
+  exit:    (dir: number) => ({ opacity: 0, x: -dir * 40, scale: 0.97 })
+}
+
 export default function TutorialOverlay(): JSX.Element | null {
   const { hasSeenWalkthrough, setHasSeenWalkthrough } = useAppSettingsStore()
 
   const [active,    setActive]    = useState(!hasSeenWalkthrough)
   const [stepIndex, setStepIndex] = useState(0)
   const [rect,      setRect]      = useState<Rect | null>(null)
+  const [direction, setDirection] = useState<1 | -1>(1)
 
   // Re-activate if user clicks "Restart Tutorial" in settings
   useEffect(() => {
@@ -90,7 +97,7 @@ export default function TutorialOverlay(): JSX.Element | null {
 
   // Measure target element on step change and on resize
   useLayoutEffect(() => {
-    if (!active || !step.target) {
+    if (!active || !step || !step.target) {
       setRect(null)
       return
     }
@@ -118,18 +125,17 @@ export default function TutorialOverlay(): JSX.Element | null {
   }, [setHasSeenWalkthrough])
 
   const next = useCallback(() => {
-    if (stepIndex < TUTORIAL_STEPS.length - 1) {
-      setStepIndex((i) => i + 1)
-    } else {
-      finish()
-    }
-  }, [stepIndex, finish])
+    setDirection(1)
+    setStepIndex((i) => Math.min(i + 1, TUTORIAL_STEPS.length - 1))
+  }, [])
 
   const prev = useCallback(() => {
+    setDirection(-1)
     setStepIndex((i) => Math.max(0, i - 1))
   }, [])
 
   if (!active) return null
+  if (!step) return null
 
   const isFirst = stepIndex === 0
   const isLast  = stepIndex === TUTORIAL_STEPS.length - 1
@@ -182,7 +188,7 @@ export default function TutorialOverlay(): JSX.Element | null {
           </div>
 
           {/* Callout card */}
-          <AnimatePresence mode="wait">
+          <AnimatePresence mode="wait" custom={direction}>
             <motion.div
               key={step.id}
               className="absolute pointer-events-auto"
@@ -203,10 +209,12 @@ export default function TutorialOverlay(): JSX.Element | null {
                       transform: 'translate(-50%, -50%)'
                     }
               }
-              initial={{ opacity: 0, y: 6, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0,  scale: 1 }}
-              exit={{    opacity: 0, y: -4, scale: 0.97 }}
-              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+              custom={direction}
+              variants={cardVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
             >
               <div
                 className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] shadow-2xl overflow-hidden"
@@ -278,7 +286,7 @@ export default function TutorialOverlay(): JSX.Element | null {
                       </button>
                     )}
                     <button
-                      onClick={next}
+                      onClick={isLast ? finish : next}
                       className="flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-semibold bg-[var(--accent)] text-white hover:bg-[var(--accent-light)] transition-all duration-100 active:scale-[0.95]"
                     >
                       {isLast ? 'Done' : 'Next'}

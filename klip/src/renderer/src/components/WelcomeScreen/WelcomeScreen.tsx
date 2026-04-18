@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Plus, FolderOpen, Clock, ChevronRight, Film } from 'lucide-react'
+import klipIcon from '@/assets/icon.ico'
 import { useAppStore } from '@/stores/appStore'
 import { useProjectStore } from '@/stores/projectStore'
 import { openProject } from '@/lib/projectIO'
@@ -68,10 +69,9 @@ export default function WelcomeScreen(): JSX.Element {
             initial={{ scale: 0.75, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: 0.35, delay: 0.04, ease: [0.34, 1.56, 0.64, 1] }}
-            className="w-[72px] h-[72px] rounded-[18px] bg-[var(--accent)] flex items-center justify-center"
-            style={{ boxShadow: '0 0 48px rgba(124, 58, 237, 0.28), 0 4px 24px rgba(0,0,0,0.5)' }}
+            style={{ filter: 'drop-shadow(0 0 24px rgba(124,58,237,0.35)) drop-shadow(0 4px 16px rgba(0,0,0,0.5))' }}
           >
-            <LogoMark />
+            <img src={klipIcon} width={72} height={72} alt="Klip" style={{ imageRendering: 'auto', display: 'block' }} />
           </motion.div>
 
           <motion.div
@@ -246,11 +246,3 @@ function RecentRow({
   )
 }
 
-function LogoMark(): JSX.Element {
-  return (
-    <svg width="38" height="38" viewBox="0 0 38 38" fill="none">
-      <path d="M8 8L30 19L8 30V8Z" fill="white" />
-      <rect x="22" y="8" width="5" height="22" rx="2.5" fill="white" opacity="0.55" />
-    </svg>
-  )
-}

@@ -23,8 +23,8 @@ const SIDEBAR_MAX = 480
 const SIDEBAR_DEFAULT = 264
 
 const TIMELINE_MIN = 120
-const TIMELINE_MAX = 520
-const TIMELINE_DEFAULT = 220
+const TIMELINE_MAX = 600
+const TIMELINE_DEFAULT = 340
 
 const DEFAULT_TEXT_SETTINGS: TextSettings = {
   content:         'New Text',
