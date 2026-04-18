@@ -784,7 +784,7 @@ npx vitest run --grep "timelineStore"
 
 ---
 
-## Phase 4 — Integration: Store ↔ Store (~45 tests)
+## Phase 4 — Integration: Store ↔ Store (~45 tests) ✅ IMPLEMENTED (50 tests)
 
 > Test that multiple stores interact correctly. No DOM required.
 
