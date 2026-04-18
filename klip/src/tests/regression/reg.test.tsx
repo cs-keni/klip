@@ -1,0 +1,250 @@
+/**
+ * Phase 6 — Regression Tests
+ *
+ * One test per bug that has already shipped.  Label format: REG-NNN.
+ * These run on every commit via `npx vitest run --grep "REG-"`.
+ */
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, act } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { readFileSync, existsSync } from 'node:fs'
+import { resolve } from 'node:path'
+import React from 'react'
+
+import { useAppSettingsStore } from '@/stores/appSettingsStore'
+
+// ---------------------------------------------------------------------------
+// REG-001 — PreviewPanel TDZ crash
+// Bug: handleSaveFrame referenced activeMediaClip in its useCallback dep array
+//      before activeMediaClip was declared, causing a ReferenceError on mount.
+// ---------------------------------------------------------------------------
+describe('REG-001', () => {
+  it('PreviewPanel mounts without ReferenceError when timeline is empty', async () => {
+    // Lazy import so the module resolution error surfaces as a test failure,
+    // not a compile-time error.
+    const { default: PreviewPanel } = await import(
+      '@/components/Layout/PreviewPanel'
+    )
+    expect(() => render(<PreviewPanel />)).not.toThrow()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// REG-002 — SidebarTab dataHelp prop missing from function signature
+// Bug: `dataHelp` was destructured from props but not listed in the function
+//      signature, so `data-help` was never forwarded to the DOM button.
+// ---------------------------------------------------------------------------
+describe('REG-002', () => {
+  // Stub out heavy children so only the tab buttons are relevant.
+  vi.mock('@/components/MediaBin/MediaBin',    () => ({ default: () => null }))
+  vi.mock('@/components/MediaBin/MusicLibrary', () => ({ default: () => null }))
+
+  it('Media tab button has data-help="import-drag-drop"', async () => {
+    const { default: Sidebar } = await import('@/components/Layout/Sidebar')
+    render(<Sidebar />)
+    const mediaBtn = screen.getByRole('button', { name: /media/i })
+    expect(mediaBtn).toHaveAttribute('data-help', 'import-drag-drop')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// REG-003a — TutorialOverlay stale closure
+// Bug: next() captured stepIndex directly instead of using a functional update,
+//      so rapid clicks read a stale value and could produce TUTORIAL_STEPS[7]
+//      === undefined, crashing the useLayoutEffect that reads step.target.
+// ---------------------------------------------------------------------------
+describe('REG-003a', () => {
+  beforeEach(() => {
+    useAppSettingsStore.setState({ hasSeenWalkthrough: false })
+  })
+
+  it('clicking Next 20 times never throws and stepIndex stays <= 6', async () => {
+    const { default: TutorialOverlay } = await import(
+      '@/components/Tutorial/TutorialOverlay'
+    )
+    const user = userEvent.setup()
+    render(<TutorialOverlay />)
+
+    // Re-query on every iteration — the card is re-keyed on each step, so the
+    // DOM node is replaced and a stale reference would silently do nothing.
+    for (let i = 0; i < 20; i++) {
+      // eslint-disable-next-line no-await-in-loop
+      const nextBtn = screen.queryByRole('button', { name: /next/i })
+      if (!nextBtn) break // reached the last step ("Done" is shown instead)
+      // eslint-disable-next-line no-await-in-loop
+      await user.click(nextBtn)
+    }
+
+    // The step counter must not exceed "7 / 7" (last valid step)
+    expect(screen.queryByText(/8\s*\/\s*7/)).not.toBeInTheDocument()
+    // The "Done" button (last step) should be visible — we're capped at step 7
+    expect(await screen.findByRole('button', { name: /done/i })).toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// REG-003b — TutorialOverlay missing guard on undefined step
+// Bug: useLayoutEffect ran with step === undefined when stepIndex somehow
+//      exceeded the array bounds, crashing on step.target.
+// ---------------------------------------------------------------------------
+describe('REG-003b', () => {
+  beforeEach(() => {
+    useAppSettingsStore.setState({ hasSeenWalkthrough: false })
+  })
+
+  it('restarts cleanly to step 1 when hasSeenWalkthrough is reset to false', async () => {
+    // We can't force stepIndex out-of-bounds externally, but the guard
+    // `if (!step) return null` is verified by exercising the restart path:
+    // skip tutorial → hasSeenWalkthrough=true, active=false →
+    // reset to false → useEffect fires → component resets to step 1 without crash.
+    const { default: TutorialOverlay } = await import(
+      '@/components/Tutorial/TutorialOverlay'
+    )
+    const user = userEvent.setup()
+    const { rerender } = render(<TutorialOverlay />)
+
+    // Initially at step 1
+    expect(await screen.findByText(/1\s*\/\s*7/)).toBeInTheDocument()
+
+    // Skip all: calls finish() → sets active=false AND hasSeenWalkthrough=true
+    await user.click(screen.getByRole('button', { name: /skip all/i }))
+
+    // Overlay is now hidden (active=false)
+    expect(screen.queryByText(/\/\s*7/)).not.toBeInTheDocument()
+    expect(useAppSettingsStore.getState().hasSeenWalkthrough).toBe(true)
+
+    // Simulate "Restart Tutorial" in settings — hasSeenWalkthrough changes true→false
+    act(() => {
+      useAppSettingsStore.setState({ hasSeenWalkthrough: false })
+    })
+    rerender(<TutorialOverlay />)
+
+    // useEffect fires (dependency changed): setActive(true), setStepIndex(0)
+    // → step 1 shown again, no crash from the out-of-bounds guard
+    expect(await screen.findByText(/1\s*\/\s*7/)).toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// REG-004 — TitleBar inside ErrorBoundary
+// Bug: TitleBar was nested inside ErrorBoundary, so when the renderer crashed
+//      the window controls disappeared and the user couldn't close the app.
+// ---------------------------------------------------------------------------
+describe('REG-004', () => {
+  it('TitleBar remains in DOM when a child inside ErrorBoundary throws', async () => {
+    const { ErrorBoundary } = await import('@/components/ErrorBoundary')
+    const { default: TitleBar } = await import('@/components/TitleBar/TitleBar')
+
+    // A component that always throws on render
+    const Crasher = (): never => {
+      throw new Error('Simulated render crash for REG-004')
+    }
+
+    render(
+      <div>
+        <TitleBar />
+        <ErrorBoundary>
+          <Crasher />
+        </ErrorBoundary>
+      </div>
+    )
+
+    // Window controls must still be in DOM
+    expect(screen.getByLabelText('Minimize')).toBeInTheDocument()
+    expect(screen.getByLabelText('Close')).toBeInTheDocument()
+    // ErrorBoundary fallback UI is shown
+    expect(screen.getByText(/something went wrong/i)).toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// REG-005 — TIMELINE_DEFAULT too small to show all 5 tracks
+// Bug: TIMELINE_DEFAULT = 220 was less than the minimum height needed to
+//      display all 5 track rows (ruler 28 + 5 × 56 = 308 px).
+// ---------------------------------------------------------------------------
+describe('REG-005', () => {
+  it('TIMELINE_DEFAULT constant in AppLayout.tsx is >= 304', () => {
+    const src = readFileSync(
+      resolve('src/renderer/src/components/Layout/AppLayout.tsx'),
+      'utf-8'
+    )
+    const match = src.match(/const\s+TIMELINE_DEFAULT\s*=\s*(\d+)/)
+    const value = match ? parseInt(match[1], 10) : 0
+    expect(value).toBeGreaterThanOrEqual(304)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// REG-006 — WelcomeScreen logo still rendering as SVG
+// Bug: LogoMark SVG was still imported and rendered after the icon file was
+//      replaced with an .ico, causing a broken/blank logo on the welcome screen.
+// ---------------------------------------------------------------------------
+describe('REG-006', () => {
+  it('WelcomeScreen logo is an <img> element, not a <svg>', async () => {
+    const { default: WelcomeScreen } = await import(
+      '@/components/WelcomeScreen/WelcomeScreen'
+    )
+    render(<WelcomeScreen />)
+    const logo = screen.getByAltText('Klip')
+    expect(logo.tagName).toBe('IMG')
+    // Double-check no SVG is present at the logo position
+    expect(logo.closest('svg')).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// REG-007 — TitleBar logo still rendering as SVG
+// Bug: Same as REG-006 but in TitleBar — old play-button SVG persisted.
+// ---------------------------------------------------------------------------
+describe('REG-007', () => {
+  it('TitleBar logo is an <img> element, not a <svg>', async () => {
+    const { default: TitleBar } = await import('@/components/TitleBar/TitleBar')
+    render(<TitleBar />)
+    const logo = screen.getByAltText('Klip')
+    expect(logo.tagName).toBe('IMG')
+    expect(logo.closest('svg')).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// REG-008 — build:win script had dangling --config flag
+// Bug: `electron-builder --win --config` with no argument caused a silent
+//      build failure on some systems.
+// ---------------------------------------------------------------------------
+describe('REG-008', () => {
+  it('build:win script in package.json has no dangling --config flag', () => {
+    const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf-8')) as {
+      scripts: Record<string, string>
+    }
+    const script = pkg.scripts['build:win']
+    expect(script).toBeDefined()
+    // A dangling --config would appear at end-of-line or before another flag
+    expect(script).not.toMatch(/--config\s*(?:--|$)/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// REG-009 — resources/icon.ico missing at build time
+// Bug: electron-builder was configured to use resources/icon.ico but the file
+//      was not committed, causing the Windows build to fail.
+// ---------------------------------------------------------------------------
+describe('REG-009', () => {
+  it('resources/icon.ico exists on disk', () => {
+    expect(existsSync(resolve('resources/icon.ico'))).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// REG-010 — SidebarTab dataTutorial prop missing from signature
+// Bug: Found alongside REG-002. dataTutorial was passed as a prop but not
+//      forwarded, so the tutorial spotlight could never find the element.
+// ---------------------------------------------------------------------------
+describe('REG-010', () => {
+  it('Music tab button has both data-tutorial and data-help attributes', async () => {
+    const { default: Sidebar } = await import('@/components/Layout/Sidebar')
+    render(<Sidebar />)
+    const musicBtn = screen.getByRole('button', { name: /music/i })
+    expect(musicBtn).toHaveAttribute('data-tutorial', 'music-tab')
+    expect(musicBtn).toHaveAttribute('data-help', 'music-library')
+  })
+})

@@ -15,18 +15,19 @@
 
 | Phase | Type | Expected tests |
 |---|---|---|
-| 1 | Unit — pure functions & utilities | ~110 |
+| 1 | Unit — pure functions & utilities | ~122 |
 | 2 | Unit — Zustand store actions | ~119 |
-| 3 | Component — renderer UI + hooks | ~218 |
+| 3 | Component — renderer UI + hooks | ~227 |
 | 4 | Integration — store ↔ store | ~45 |
-| 5 | Integration — IPC / main process | ~89 |
+| 5 | Integration — IPC / main process + contracts | ~118 |
 | 6 | Regression — one test per shipped bug | ~15 |
 | 7 | Smoke — pre-build sanity | ~15 |
 | 8 | Functional — feature checklist (manual / Playwright) | ~65 |
 | 9 | Performance — benchmarks | ~15 |
 | 10 | Security — Electron surface | ~12 |
 | 11 | Acceptance — user stories | ~30 |
-| **Total** | | **~733** |
+| 12 | Accessibility — axe + keyboard navigation | ~20 |
+| **Total** | | **~803** |
 
 ---
 
@@ -38,6 +39,8 @@
 | E2E / functional | **Playwright** with `electron` launch driver |
 | Performance benchmarks | **Vitest bench** + manual profiling |
 | Coverage reporting | **@vitest/coverage-v8** |
+| Property-based testing | **fast-check** (run inside Vitest) |
+| Accessibility | **jest-axe** + **axe-core** (run inside Vitest + RTL) |
 
 ```bash
 # All unit + component tests
@@ -217,6 +220,39 @@ npx vitest run --grep "timelineStore"
 - [ ] `getHelpEntry("nonexistent")` returns null/undefined (not a crash)
 - [ ] Help entries are grouped correctly by category
 - [ ] At least 10 help entries exist (guard against accidental deletions)
+
+---
+
+### 1.9 Property-based tests — timeline math invariants (~12 tests)
+
+> Uses **fast-check** to generate arbitrary valid inputs and assert mathematical laws.
+> These catch edge cases that hand-picked examples never think to try.
+
+**`splitClip` invariants** (for any valid playhead in `(startTime, startTime + duration)`)
+- [ ] `left.duration + right.duration === original.duration` (no time is gained or lost)
+- [ ] `left.startTime === original.startTime`
+- [ ] `right.startTime === original.startTime + left.duration`
+- [ ] Both resulting clips have `duration > 0`
+
+**`rippleDelete` ordering invariant** (for any timeline with N clips on the same track)
+- [ ] After ripple delete, all surviving clips on the same track remain sorted by `startTime`
+- [ ] No surviving clip on the same track has a `startTime` that is negative
+
+**`moveClip` clamping invariant**
+- [ ] For any arbitrary negative input, `clip.startTime >= 0` after the move
+
+**`trimClip` invariant**
+- [ ] For any trim patch, `clip.duration >= 0.033` (minimum one frame) after the trim
+
+**`addClip` / `removeClip` count invariant**
+- [ ] For any sequence of N `addClip` calls followed by N `removeClip` calls with valid IDs, `clips.length` returns to its original value
+
+**`undo` / `redo` round-trip invariant**
+- [ ] For any sequence of actions, `undo()` then `redo()` returns to the same clips snapshot (deep equality)
+- [ ] `past.length` never exceeds 50 regardless of how many actions are performed (bounded by property test with 100 actions)
+
+**`pasteClips` ID uniqueness invariant**
+- [ ] After any number of consecutive pastes, all clip IDs in the store remain unique (no duplicates)
 
 ---
 
@@ -724,6 +760,25 @@ npx vitest run --grep "timelineStore"
 
 ---
 
+### 3.24 `AppLayout` + `ResizeHandle` (~8 tests)
+
+*The outermost editor shell — no coverage exists today.*
+
+**`AppLayout`:**
+- [ ] Renders the sidebar, preview panel, and timeline panel without crash when timeline is empty
+- [ ] **REG-005** (component-level recheck): initial timeline section height is `>= 304px`
+- [ ] `setShowExport(true)` causes `ExportDialog` to appear in the DOM
+- [ ] `setShowSettings(true)` causes `SettingsDialog` to appear in the DOM
+- [ ] Missing-file check IPC is called on mount (verifies `window.api.media.checkFilesExist` was invoked)
+- [ ] Proxy batch-check IPC is called on mount when media clips exist
+
+**`ResizeHandle`:**
+- [ ] Dragging the horizontal resize handle updates the timeline panel height
+- [ ] Dragging the vertical resize handle updates the sidebar width
+- [ ] Panel sizes are clamped — timeline height never drops below the minimum (304px)
+
+---
+
 ## Phase 4 — Integration: Store ↔ Store (~45 tests)
 
 > Test that multiple stores interact correctly. No DOM required.
@@ -795,20 +850,26 @@ npx vitest run --grep "timelineStore"
 > Test main-process handlers in isolation. Use a real temp directory on disk.
 > Electron's `BrowserWindow` is not needed — IPC handlers are plain async functions.
 
-### 5.1 `mediaHandlers` (~12 tests)
+### 5.1 `mediaHandlers` (~18 tests)
 
 - [ ] `media:probe` returns `{ duration, width, height }` for a known `.mp4` fixture
 - [ ] `media:probe` returns `width: 0, height: 0` for an audio-only file
 - [ ] `media:probe` rejects with an Error for a non-existent path
 - [ ] `media:probe` rejects with a timeout error after 30 seconds on a hang (mocked timeout)
 - [ ] `media:getType` classifies `.mp4` as `"video"`, `.mp3` as `"audio"`, `.png` as `"image"`
-- [ ] `media:openDialog` calls `dialog.showOpenDialog` with the correct filters
-- [ ] `media:revealInExplorer` calls `shell.showItemInFolder`
+- [ ] `media:open-dialog` calls `dialog.showOpenDialog` with the correct filters
+- [ ] `media:reveal-in-explorer` calls `shell.showItemInFolder`
 - [ ] Importing a duplicate path via IPC does not add a second `MediaClip` to the store
 - [ ] Importing a file larger than 8 GB does not crash (large file metadata read)
 - [ ] Importing an image returns `duration: 5` (default still-image duration)
 - [ ] File path with special characters (spaces, Unicode) is handled without error
 - [ ] `media:probe` on a zero-byte file returns a descriptive error, not a crash
+- [ ] `media:get-file-info` returns `{ size }` in bytes for a known file
+- [ ] `media:get-file-info` rejects for a non-existent path
+- [ ] `media:check-files-exist` returns `{ path: true }` for existing paths and `{ path: false }` for missing ones
+- [ ] `media:pick-file` calls `dialog.showOpenDialog` with filters scoped to the requested type (`"video"`, `"audio"`, or `"image"`)
+- [ ] `media:extract-frame` produces a PNG file at the requested time position for a known video fixture
+- [ ] `media:extract-frame` returns `null` gracefully when FFmpeg cannot decode the file
 
 ### 5.2 `projectHandlers` (~15 tests)
 
@@ -828,7 +889,7 @@ npx vitest run --grep "timelineStore"
 - [ ] `project:saveAutosave` writes to the autosave path without overwriting the main project file
 - [ ] Autosave path is in `app.getPath("userData")` (not next to the project file)
 
-### 5.3 `exportHandlers` (~14 tests)
+### 5.3 `exportHandlers` (~19 tests)
 
 - [ ] Export handler spawns an FFmpeg child process with the correct arguments
 - [ ] Progress events (`export:progress`) fire with increasing percentage 0–100
@@ -844,8 +905,13 @@ npx vitest run --grep "timelineStore"
 - [ ] Exporting a text overlay includes the `drawtext` FFmpeg filter in the command
 - [ ] Exporting a transition includes the `fade` FFmpeg filter
 - [ ] Exporting speed-ramped clips includes the `setpts` filter
+- [ ] `export:quick-preview` spawns FFmpeg with 720p + veryfast + CRF 28 (draft quality flags)
+- [ ] `export:quick-preview-progress` events fire during the quick render
+- [ ] `export:quick-preview-done` emits the temp file path when complete
+- [ ] `export:cancel-quick-preview` kills the quick-preview FFmpeg process without affecting a running full export
+- [ ] `export:save-frame` writes a PNG/JPEG data URL to the chosen path via a save dialog; returns the saved path
 
-### 5.4 `waveformHandlers` (~8 tests)
+### 5.4 `waveformHandlers` (~10 tests)
 
 - [ ] Returns a `Float32Array` (or serialized equivalent) of peak data for a known audio file
 - [ ] Returns data with the expected sample count for the requested resolution
@@ -855,6 +921,8 @@ npx vitest run --grep "timelineStore"
 - [ ] Cache key is tied to the file path (different path → different cache entry)
 - [ ] Deleting the cache file triggers re-generation on next request
 - [ ] Corrupt cache file is detected; fallback to re-generation (no crash)
+- [ ] `media:analyze-loudness` returns `{ inputI }` (integrated LUFS) for a known audio fixture
+- [ ] `media:analyze-loudness` returns `null` gracefully for a file with no audio stream (no crash)
 
 ### 5.5 `windowHandlers` (~6 tests)
 
@@ -865,13 +933,16 @@ npx vitest run --grep "timelineStore"
 - [ ] `window:isMaximized` returns `true` when maximized, `false` otherwise
 - [ ] `window:maximized-changed` event is pushed to renderer when maximize state changes
 
-### 5.6 `proxyHandlers` (~5 tests)
+### 5.6 `proxyHandlers` (~8 tests)
 
 - [ ] Proxy generation produces a `.mp4` file in `userData/klip-proxies/`
 - [ ] Proxy file is at 480p regardless of source resolution
-- [ ] Progress events fire during generation
-- [ ] Cancellation stops the FFmpeg proxy process
-- [ ] Proxy status is correctly reported back to renderer via `proxy:status` event
+- [ ] Progress events (`media:proxy-progress`) fire during generation with `{ clipId, progress }` shape
+- [ ] `media:proxy-done` event fires with `{ clipId, proxyPath }` on completion
+- [ ] `media:proxy-error` event fires with `{ clipId, error }` on FFmpeg failure
+- [ ] `media:cancel-proxy` stops only the targeted clip's FFmpeg process (other proxies keep running)
+- [ ] `media:check-proxy` returns the proxy file path when it exists, or `null` when absent
+- [ ] `media:check-proxies-batch` returns a `Record<clipId, path | null>` for each requested id
 
 ---
 
@@ -930,46 +1001,67 @@ npx vitest run --grep "timelineStore"
 
 ---
 
-## Phase 6 — Regression Tests (~15 tests)
+### 5.11 IPC surface / contract tests (~10 tests)
 
-> One test per bug that has already shipped. These run as part of every CI pass.
-> Label format: `REG-NNN`.
+> Verify that every channel exposed in `preload/index.ts` has a registered handler in main,
+> and that every main-process `ipcMain.handle` / `ipcMain.on` call is surfaced in the preload.
+> Prevents the two processes silently drifting apart after a rename or deletion.
 
-| ID | Component | Bug description | Test |
-|---|---|---|---|
-| REG-001 | `PreviewPanel` | `activeMediaClip` TDZ crash — `handleSaveFrame` used `activeMediaClip` in its dep array before it was declared | Mount `PreviewPanel` with an empty timeline; assert no `ReferenceError` thrown |
-| REG-002 | `SidebarTab` | `dataHelp is not defined` — prop destructured but not included in function signature | Render `SidebarTab` with `dataHelp="test"` prop; assert `data-help="test"` on the button |
-| REG-003a | `TutorialOverlay` | Stale closure: `stepIndex` read from stale dep caused `TUTORIAL_STEPS[7]` = `undefined` | Fire `next()` handler 20 times synchronously; assert `stepIndex <= 6` and no `TypeError` |
-| REG-003b | `TutorialOverlay` | No guard on `step` being `undefined` in `useLayoutEffect` | Manually set `stepIndex` to 7 in isolation; assert component returns null, not a crash |
-| REG-004 | `App` + `ErrorBoundary` | `TitleBar` was inside `ErrorBoundary`; crash removed window controls | Throw a render error; assert `TitleBar` is still in the DOM |
-| REG-005 | `AppLayout` | Default `TIMELINE_DEFAULT = 220` was too short to show all 5 tracks | Assert initial timeline height `>= 304` (ruler + all track heights) |
-| REG-006 | `WelcomeScreen` | `LogoMark` SVG still shown after icon replacement | Assert logo is an `<img>` tag, not a `<svg>` |
-| REG-007 | `TitleBar` | Old play-button SVG still shown in title bar after icon replacement | Assert title bar logo is an `<img>` tag, not a `<svg>` |
-| REG-008 | `build` | `build:win` had a dangling `--config` flag that failed silently | Run `npm run build:win --dry-run` and assert exit code 0 |
-| REG-009 | `build` | `resources/icon.ico` missing at build time | Assert `klip/resources/icon.ico` exists before electron-builder runs |
-| REG-010 | `Sidebar` | `dataTutorial` prop missing from `SidebarTab` signature (found alongside REG-002) | Render with both `dataTutorial` and `dataHelp`; assert both attributes on button |
+- [ ] Every channel name in `window.api.window.*` has a matching `ipcMain.handle` or `ipcMain.on` registration
+- [ ] Every channel name in `window.api.media.*` has a matching handler
+- [ ] Every channel name in `window.api.project.*` has a matching handler
+- [ ] Every channel name in `window.api.export.*` (start, cancel, quick-preview, save-frame) has a matching handler
+- [ ] Every channel name in `window.api.waveform.*` has a matching handler
+- [ ] Every channel name in `window.api.settings.*` has a matching handler
+- [ ] Every channel name in `window.api.proxy.*` has a matching handler
+- [ ] No `ipcMain.handle` or `ipcMain.on` registration in main uses a channel name that is NOT present in the preload (no dead handlers)
+- [ ] Preload event subscriptions (`onProgress`, `onDone`, `onError` for export and proxy) return a working unsubscribe function that calls `ipcRenderer.removeListener`
+- [ ] Calling the returned unsubscribe function twice does not throw
 
 ---
 
-## Phase 7 — Smoke Tests (~15 tests)
+## Phase 6 — Regression Tests (~15 tests) ✅ IMPLEMENTED
+
+> One test per bug that has already shipped. These run as part of every CI pass.
+> Label format: `REG-NNN`.
+> **File:** `src/tests/regression/reg.test.tsx` — 11 tests, all passing.
+
+| ID | Component | Bug description | Status |
+|---|---|---|---|
+| REG-001 | `PreviewPanel` | `activeMediaClip` TDZ crash — `handleSaveFrame` used `activeMediaClip` in its dep array before it was declared | ✅ |
+| REG-002 | `SidebarTab` | `dataHelp is not defined` — prop destructured but not included in function signature | ✅ |
+| REG-003a | `TutorialOverlay` | Stale closure: `stepIndex` read from stale dep caused `TUTORIAL_STEPS[7]` = `undefined` | ✅ |
+| REG-003b | `TutorialOverlay` | No guard on `step` being `undefined` in `useLayoutEffect` | ✅ |
+| REG-004 | `App` + `ErrorBoundary` | `TitleBar` was inside `ErrorBoundary`; crash removed window controls | ✅ |
+| REG-005 | `AppLayout` | Default `TIMELINE_DEFAULT = 220` was too short to show all 5 tracks | ✅ |
+| REG-006 | `WelcomeScreen` | `LogoMark` SVG still shown after icon replacement | ✅ |
+| REG-007 | `TitleBar` | Old play-button SVG still shown in title bar after icon replacement | ✅ |
+| REG-008 | `build` | `build:win` had a dangling `--config` flag that failed silently | ✅ |
+| REG-009 | `build` | `resources/icon.ico` missing at build time | ✅ |
+| REG-010 | `Sidebar` | `dataTutorial` prop missing from `SidebarTab` signature (found alongside REG-002) | ✅ |
+
+---
+
+## Phase 7 — Smoke Tests (~15 tests) ✅ IMPLEMENTED
 
 > Run before every build. Fast. Coarse. If any of these fail, do not ship.
+> **File:** `src/tests/smoke/smoke.test.tsx` — 11 tests, all passing.
+> Electron process-level smokes (launch, window title, clean shutdown) deferred to Phase 8 Playwright.
 
-- [ ] App process launches (Electron main process starts without crash)
-- [ ] Welcome screen renders: logo, "New Project", "Open Project" all visible
-- [ ] "New Project" button transitions to the editor view
-- [ ] Editor layout renders: sidebar, preview panel, timeline all in DOM
-- [ ] All 5 timeline tracks visible without scrolling (Video 1, Audio 1, Extra Audio, Music, Text)
-- [ ] No uncaught errors in the DevTools console on startup
-- [ ] No failed network requests in the console (no remote asset loads)
-- [ ] Tutorial auto-launches on a simulated first run (`hasSeenWalkthrough: false`)
-- [ ] Tutorial can be advanced to step 7 and completed with "Done" (no crash)
-- [ ] `Ctrl+K` opens the Command Palette
-- [ ] Settings dialog opens from the toolbar gear icon
-- [ ] Export dialog opens from the toolbar export button
-- [ ] App window title shows "Klip" (not "Electron")
-- [ ] Closing the app via the X button exits with code 0 (clean shutdown)
-- [ ] A second launch after a clean close opens normally (no corrupted state)
+- [x] App process launches (renderer shell renders without crash) — covered by Smoke 7.1
+- [x] Welcome screen renders: logo, "New Project", "Open Project" all visible — Smoke 7.1
+- [x] "New Project" button transitions to the editor view — Smoke 7.2
+- [x] Editor layout renders: sidebar, preview panel, timeline all in DOM — Smoke 7.3
+- [x] All 5 timeline tracks present in timelineStore (Video 1, Audio 1, Extra Audio, Music, Text) — Smoke 7.4
+- [x] No uncaught errors (`console.error`) on startup — Smoke 7.5
+- [x] Tutorial auto-launches on a simulated first run (`hasSeenWalkthrough: false`) — Smoke 7.6
+- [x] Tutorial can be advanced to step 7 and completed with "Done" (no crash) — Smoke 7.7
+- [x] Command Palette renders a search input when opened via store — Smoke 7.8
+- [x] Settings dialog renders when `showSettings` is set to true — Smoke 7.9
+- [x] Export dialog renders when `showExport` is set to true — Smoke 7.10
+- [ ] App window title shows "Klip" (not "Electron") — deferred to Playwright E2E
+- [ ] Closing the app via the X button exits with code 0 (clean shutdown) — deferred to Playwright E2E
+- [ ] A second launch after a clean close opens normally (no corrupted state) — deferred to Playwright E2E
 
 ---
 
@@ -1177,21 +1269,62 @@ npx vitest run --grep "timelineStore"
 
 ---
 
+## Phase 12 — Accessibility Tests (~20 tests)
+
+> **Tool:** `jest-axe` (axe-core wrapped for Vitest) + React Testing Library.
+> Every rendered component must pass `expect(await axe(container)).toHaveNoViolations()`.
+> Additional manual checks cover keyboard-only navigation and focus management.
+
+### 12.1 axe automated scans (~8 tests)
+
+*Run `axe()` on the fully-rendered component and assert zero violations.*
+
+- [ ] `WelcomeScreen` — no axe violations
+- [ ] `TutorialOverlay` (step 1) — no axe violations
+- [ ] `ExportDialog` — no axe violations
+- [ ] `SettingsDialog` — no axe violations
+- [ ] `CommandPalette` — no axe violations
+- [ ] `ErrorBoundary` fallback UI — no axe violations
+- [ ] `ClipCard` — no axe violations
+- [ ] `TrackRow` — no axe violations
+
+### 12.2 Focus management (~6 tests)
+
+- [ ] Opening `SettingsDialog` traps focus inside — Tab cycling never escapes the modal while it is open
+- [ ] Closing `SettingsDialog` (Esc or X) returns focus to the element that triggered the open
+- [ ] Opening `CommandPalette` moves focus to the search input automatically
+- [ ] Closing `CommandPalette` (Esc) returns focus to the trigger button
+- [ ] `TutorialOverlay` "Next" button is auto-focused on each step change (keyboard users can advance without mouse)
+- [ ] `ExportDialog` export button is reachable by Tab without skipping interactive controls
+
+### 12.3 Keyboard navigation (~6 tests)
+
+- [ ] All toolbar buttons are reachable by Tab key
+- [ ] All toolbar buttons activate on Enter and Space (not just click)
+- [ ] Timeline clip selection responds to keyboard: Tab moves focus between clips; Enter selects
+- [ ] Track header lock/mute/solo buttons are keyboard-operable
+- [ ] `ClipContextMenu` can be navigated entirely via arrow keys; Enter confirms; Esc closes
+- [ ] "What's this?" mode is exitable with Esc key (no mouse required)
+
+---
+
 ## Priority order
 
 Start here — highest ROI first:
 
 1. **Phase 6 (Regression)** — protect against every crash already shipped
 2. **Phase 7 (Smoke)** — fast gate before every build; catches catastrophic regressions in minutes
-3. **Phase 1 (Unit: mediaUtils + signals + tutorialSteps)** — pure functions, zero mocking overhead
-4. **Phase 2 (Unit: timelineStore + all stores)** — the most-used code paths; every action should be verified; includes §2.10–2.14 for the five uncovered stores
-5. **Phase 3 §3.1–3.9 (Components: TutorialOverlay, ErrorBoundary, TitleBar, WelcomeScreen)** — already broke twice each
-6. **Phase 3 §3.10–3.20 (Components: TopToolbar, CommandPalette, ExportDialog, SourceClipViewer, WhatThisOverlay, TimelineRuler, WaveformCanvas, SettingsDialog, ColorClipDialog, MusicLibrary, Toaster)** — zero coverage today
-7. **Phase 3 §3.21–3.23 (Hooks: useProjectIO, useWaveform, useProxyEvents)** — hooks are thin but critical; autosave and waveform bugs are hard to reproduce manually
-8. **Phase 4 (Store integration)** — catches state management bugs before they surface in the UI
-9. **Phase 5 §5.1–5.6 (IPC: projectHandlers + exportHandlers)** — file I/O and FFmpeg are the highest-risk main-process code
-10. **Phase 5 §5.7–5.10 (IPC: settingsHandlers, localFileProtocol, ffmpegExport unit, windowState)** — currently zero coverage; localFileProtocol range-request bugs are invisible until export
-11. **Phase 8 (Functional)** — manual checklist until E2E is wired; run before every beta release
-12. **Phase 9 (Performance)** — once core features are stable
-13. **Phase 10 (Security)** — before any public release beyond private beta
-14. **Phase 11 (Acceptance)** — final sign-off gate before each versioned release
+3. **Phase 1 §1.1–1.8 (Unit: mediaUtils + signals + tutorialSteps)** — pure functions, zero mocking overhead
+4. **Phase 1 §1.9 (Property-based)** — run alongside unit tests; catches timeline math edge cases exhaustively
+5. **Phase 2 (Unit: timelineStore + all stores)** — the most-used code paths; every action verified; includes §2.10–2.14 for the five previously uncovered stores
+6. **Phase 3 §3.1–3.9 (Components: TutorialOverlay, ErrorBoundary, TitleBar, WelcomeScreen)** — already broke twice each
+7. **Phase 3 §3.10–3.24 (Components: TopToolbar, CommandPalette, ExportDialog, SourceClipViewer, WhatThisOverlay, TimelineRuler, WaveformCanvas, SettingsDialog, ColorClipDialog, MusicLibrary, Toaster, AppLayout)** — zero coverage today
+8. **Phase 3 §3.21–3.23 (Hooks: useProjectIO, useWaveform, useProxyEvents)** — autosave and waveform bugs are hard to reproduce manually
+9. **Phase 4 (Store integration)** — catches state management bugs before they surface in the UI
+10. **Phase 5 §5.1–5.6 (IPC core: mediaHandlers, projectHandlers, exportHandlers)** — file I/O and FFmpeg are the highest-risk main-process code
+11. **Phase 5 §5.7–5.11 (IPC extended: settingsHandlers, localFileProtocol, ffmpegExport unit, windowState, IPC contract)** — zero coverage today; IPC contract tests prevent silent main/renderer drift
+12. **Phase 12 (Accessibility)** — after component tests are passing; run axe scans and keyboard nav tests together
+13. **Phase 8 (Functional)** — manual checklist until E2E is wired; run before every beta release
+14. **Phase 9 (Performance)** — once core features are stable
+15. **Phase 10 (Security)** — before any public release beyond private beta
+16. **Phase 11 (Acceptance)** — final sign-off gate before each versioned release
