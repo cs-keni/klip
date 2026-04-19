@@ -11,7 +11,11 @@
     "build:win": "npm run build && electron-builder --win",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:ui": "playwright test --ui",
+    "build:test": "npm run build && npm run test:e2e"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.0",
@@ -28,6 +32,7 @@
   },
   "devDependencies": {
     "@electron-toolkit/tsconfig": "^1.0.1",
+    "@playwright/test": "^1.59.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
@@ -40,6 +45,7 @@
     "autoprefixer": "^10.4.19",
     "electron": "^30.0.0",
     "electron-builder": "^24.13.3",
+    "electron-playwright-helpers": "^2.1.0",
     "electron-vite": "^2.2.0",
     "fast-check": "^4.7.0",
     "jest-axe": "^10.0.0",

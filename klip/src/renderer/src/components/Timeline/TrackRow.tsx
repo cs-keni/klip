@@ -369,6 +369,7 @@ export default function TrackRow({
       {/* ── Clip lane ───────────────────────────────────────────────────── */}
       <div
         ref={laneRef}
+        data-testid={`track-lane-${track.type}`}
         className={cn(
           'relative flex-1 transition-colors duration-100',
           isDragOver && !track.isLocked

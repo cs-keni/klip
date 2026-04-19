@@ -28,7 +28,7 @@ export default function TitleBar(): JSX.Element {
       {/* Center: Project name — drag region covers this area */}
       <div className="flex-1 flex items-center justify-center h-full min-w-0">
         {projectName && (
-          <span className="text-[var(--text-muted)] text-xs truncate max-w-xs">
+          <span data-testid="project-name" className="text-[var(--text-muted)] text-xs truncate max-w-xs">
             {projectName}
             {hasUnsavedChanges && (
               <span className="ml-1.5 text-[var(--accent-bright)] text-[10px]">●</span>

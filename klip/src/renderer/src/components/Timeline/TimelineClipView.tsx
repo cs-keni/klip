@@ -338,6 +338,8 @@ export default function TimelineClipView({
   return (
     <>
       <motion.div
+        data-testid="timeline-clip"
+        data-clip-id={clip.id}
         className={cn('absolute select-none touch-none', isDraggingState ? 'z-30' : isSelected ? 'z-20' : 'z-10', isLocked && 'pointer-events-none opacity-70')}
         style={{ left: leftMV, width: widthMV, top: PADDING, height: clipHeight }}
         initial={{ opacity: 0, scaleX: 0.88 }}
