@@ -8,6 +8,9 @@ import React from 'react'
 
 import { useCommandPaletteStore } from '@/stores/commandPaletteStore'
 import { useUIStore }             from '@/stores/uiStore'
+// Static import avoids the per-test cold-load delay that caused a 5 s timeout
+// on the first dynamic import() call (CommandPalette pulls in 16 lucide icons).
+import CommandPalette             from '@/components/CommandPalette/CommandPalette'
 
 vi.mock('@/lib/projectIO', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/projectIO')>()
@@ -28,28 +31,19 @@ describe('3.11 CommandPalette', () => {
     useCommandPaletteStore.setState({ isOpen: false })
   })
 
-  it('renders nothing in the DOM when isOpen is false', async () => {
-    const { default: CommandPalette } = await import(
-      '@/components/CommandPalette/CommandPalette'
-    )
+  it('renders nothing in the DOM when isOpen is false', () => {
     render(<CommandPalette />)
     expect(screen.queryByPlaceholderText(/type a command/i)).not.toBeInTheDocument()
   })
 
-  it('renders the search input when isOpen is true', async () => {
+  it('renders the search input when isOpen is true', () => {
     useCommandPaletteStore.setState({ isOpen: true })
-    const { default: CommandPalette } = await import(
-      '@/components/CommandPalette/CommandPalette'
-    )
     render(<CommandPalette />)
     expect(screen.getByPlaceholderText(/type a command/i)).toBeInTheDocument()
   })
 
-  it('shows command groups (File, Edit, Playback, Timeline, View) by default', async () => {
+  it('shows command groups (File, Edit, Playback, Timeline, View) by default', () => {
     useCommandPaletteStore.setState({ isOpen: true })
-    const { default: CommandPalette } = await import(
-      '@/components/CommandPalette/CommandPalette'
-    )
     render(<CommandPalette />)
     expect(screen.getByText('File')).toBeInTheDocument()
     expect(screen.getByText('Edit')).toBeInTheDocument()
@@ -58,9 +52,6 @@ describe('3.11 CommandPalette', () => {
 
   it('typing a query filters commands to matching results only', async () => {
     useCommandPaletteStore.setState({ isOpen: true })
-    const { default: CommandPalette } = await import(
-      '@/components/CommandPalette/CommandPalette'
-    )
     const user = userEvent.setup()
     render(<CommandPalette />)
 
@@ -71,11 +62,8 @@ describe('3.11 CommandPalette', () => {
     expect(screen.queryByText('Save Project')).not.toBeInTheDocument()
   })
 
-  it('pressing Escape on the input closes the palette', async () => {
+  it('pressing Escape on the input closes the palette', () => {
     useCommandPaletteStore.setState({ isOpen: true })
-    const { default: CommandPalette } = await import(
-      '@/components/CommandPalette/CommandPalette'
-    )
     render(<CommandPalette />)
 
     const input = screen.getByPlaceholderText(/type a command/i)
@@ -84,11 +72,8 @@ describe('3.11 CommandPalette', () => {
     expect(useCommandPaletteStore.getState().isOpen).toBe(false)
   })
 
-  it('clicking the backdrop div closes the palette', async () => {
+  it('clicking the backdrop div closes the palette', () => {
     useCommandPaletteStore.setState({ isOpen: true })
-    const { default: CommandPalette } = await import(
-      '@/components/CommandPalette/CommandPalette'
-    )
     render(<CommandPalette />)
 
     // The backdrop is the absolute inset-0 div with onClick={onClose}
@@ -100,9 +85,6 @@ describe('3.11 CommandPalette', () => {
 
   it('shows "No commands found" when query matches nothing', async () => {
     useCommandPaletteStore.setState({ isOpen: true })
-    const { default: CommandPalette } = await import(
-      '@/components/CommandPalette/CommandPalette'
-    )
     const user = userEvent.setup()
     render(<CommandPalette />)
 
@@ -113,10 +95,6 @@ describe('3.11 CommandPalette', () => {
 
   it('pressing ArrowDown then Enter runs the second command', async () => {
     useCommandPaletteStore.setState({ isOpen: true })
-    const { default: CommandPalette } = await import(
-      '@/components/CommandPalette/CommandPalette'
-    )
-    // Focus on "Export Video" which triggers setShowExport
     const user = userEvent.setup()
     render(<CommandPalette />)
 
@@ -128,11 +106,8 @@ describe('3.11 CommandPalette', () => {
     expect(useCommandPaletteStore.getState().isOpen).toBe(false)
   })
 
-  it('command count footer shows the number of filtered commands', async () => {
+  it('command count footer shows the number of filtered commands', () => {
     useCommandPaletteStore.setState({ isOpen: true })
-    const { default: CommandPalette } = await import(
-      '@/components/CommandPalette/CommandPalette'
-    )
     render(<CommandPalette />)
 
     // No query — all commands shown; footer has "N commands"
