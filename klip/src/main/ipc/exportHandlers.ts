@@ -2,6 +2,7 @@ import { ipcMain, dialog, BrowserWindow, app, Notification, shell } from 'electr
 import { join } from 'path'
 import { writeFileSync } from 'fs'
 import { runExport, cancelExport, type ExportJob, getFFmpegPath, buildFFmpegArgs } from '../ffmpegExport'
+import { isExportPathSafe } from '../security'
 import { spawn, ChildProcess } from 'child_process'
 
 export function registerExportHandlers(mainWindow: BrowserWindow): void {
@@ -16,6 +17,10 @@ export function registerExportHandlers(mainWindow: BrowserWindow): void {
 
   // Start an export job; progress/done/error are pushed back via events
   ipcMain.handle('export:start', async (_, job: ExportJob) => {
+    if (!isExportPathSafe(job.outputPath)) {
+      mainWindow.webContents.send('export:error', 'Invalid output path: path traversal detected')
+      return
+    }
     runExport(
       job,
       (progress) => {

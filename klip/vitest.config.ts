@@ -32,7 +32,9 @@ export default defineConfig({
     environment: 'jsdom',
     environmentMatchGlobs: [
       // Main-process / IPC tests run in Node — no DOM needed
-      ['src/tests/ipc/**', 'node']
+      ['src/tests/ipc/**', 'node'],
+      // Security tests read source files and import main-process modules
+      ['src/tests/security/**', 'node'],
     ],
     setupFiles: ['src/tests/setup.ts'],
     include: ['src/tests/**/*.test.{ts,tsx}'],

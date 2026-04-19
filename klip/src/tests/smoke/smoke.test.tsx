@@ -22,6 +22,10 @@ import { useUIStore } from '@/stores/uiStore'
 import { useTimelineStore } from '@/stores/timelineStore'
 import { useCommandPaletteStore } from '@/stores/commandPaletteStore'
 
+import App from '@/App'
+import WelcomeScreen from '@/components/WelcomeScreen/WelcomeScreen'
+import CommandPalette from '@/components/CommandPalette/CommandPalette'
+
 // ── Stub out heavy inner components ──────────────────────────────────────────
 // These are replaced globally for this file so no IPC / canvas / FFmpeg code
 // runs.  The stubs expose data-testid markers so structural tests can still
@@ -44,12 +48,10 @@ beforeEach(() => {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function renderApp() {
-  const { default: App } = await import('@/App')
   return render(<App />)
 }
 
 async function navigateToEditor() {
-  const { default: App } = await import('@/App')
   const user = userEvent.setup()
   render(<App />)
   await user.click(screen.getByRole('button', { name: /new project/i }))
@@ -58,8 +60,7 @@ async function navigateToEditor() {
 // =============================================================================
 
 describe('Smoke 7.1 — Welcome screen', () => {
-  it('renders logo, New Project button, and Open Project button', async () => {
-    const { default: WelcomeScreen } = await import('@/components/WelcomeScreen/WelcomeScreen')
+  it('renders logo, New Project button, and Open Project button', () => {
     render(<WelcomeScreen />)
 
     expect(screen.getByAltText('Klip')).toBeInTheDocument()
@@ -68,7 +69,6 @@ describe('Smoke 7.1 — Welcome screen', () => {
   })
 
   it('shows empty recent-projects placeholder when there are no recents', async () => {
-    const { default: WelcomeScreen } = await import('@/components/WelcomeScreen/WelcomeScreen')
     render(<WelcomeScreen />)
     // The placeholder renders asynchronously after the getRecent() promise resolves.
     expect(await screen.findByText(/no recent projects/i)).toBeInTheDocument()
@@ -119,13 +119,12 @@ describe('Smoke 7.4 — Default timeline tracks', () => {
 // =============================================================================
 
 describe('Smoke 7.5 — No console.error on startup', () => {
-  it('welcome screen renders without any console.error calls', async () => {
+  it('welcome screen renders without any console.error calls', () => {
     // console.error is replaced with a vi.fn() spy in setup.ts.
     // Cast it so we can assert on it.
     const errorSpy = console.error as ReturnType<typeof vi.fn>
     errorSpy.mockClear()
 
-    const { default: WelcomeScreen } = await import('@/components/WelcomeScreen/WelcomeScreen')
     render(<WelcomeScreen />)
 
     expect(errorSpy).not.toHaveBeenCalled()
@@ -177,9 +176,6 @@ describe('Smoke 7.8 — Command Palette', () => {
     // Render CommandPalette directly so we can control isOpen without the full
     // App/AppLayout render chain (keyboard binding lives in Timeline which is
     // mocked; this verifies the component itself works).
-    const { default: CommandPalette } = await import(
-      '@/components/CommandPalette/CommandPalette'
-    )
     render(<CommandPalette />)
 
     await act(async () => {

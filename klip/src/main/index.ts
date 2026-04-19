@@ -10,6 +10,7 @@ import { registerProxyHandlers } from './ipc/proxyHandlers'
 import { registerWaveformHandlers } from './ipc/waveformHandlers'
 import { registerSettingsHandlers } from './ipc/settingsHandlers'
 import { registerKlipScheme, registerLocalFileProtocol } from './localFileProtocol'
+import { isAllowedExternalUrl } from './security'
 
 // Must be called synchronously before app.whenReady()
 registerKlipScheme()
@@ -47,9 +48,12 @@ function createWindow(): void {
     }
   })
 
-  // Open external links in the browser, not in Electron
+  // Open external links in the browser, not in Electron.
+  // Only http/https URLs are allowed — file:// and javascript: are rejected.
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    if (isAllowedExternalUrl(details.url)) {
+      shell.openExternal(details.url)
+    }
     return { action: 'deny' }
   })
 

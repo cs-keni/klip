@@ -1221,9 +1221,13 @@ npx vitest run --grep "timelineStore"
 
 ---
 
-## Phase 10 — Security Tests (~12 tests)
+## Phase 10 — Security Tests (~12 tests) ✅ IMPLEMENTED (12 tests)
 
 > Electron-specific attack surface. Run once before each public release.
+> **File:** `src/tests/security/security.test.ts`
+> **Production fixes applied:** `src/main/security.ts` (URL + path validators),
+> `src/main/index.ts` (URL-guarded `setWindowOpenHandler`),
+> `src/main/ipc/exportHandlers.ts` (traversal-guarded `export:start`).
 
 - [ ] `contextIsolation: true` is set in `BrowserWindow` webPreferences
 - [ ] `nodeIntegration` is `false` or not set (defaults to false) — renderer cannot call `require()`
