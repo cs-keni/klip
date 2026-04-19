@@ -1182,9 +1182,11 @@ npx vitest run --grep "timelineStore"
 
 ---
 
-## Phase 9 — Performance Tests (~15 tests)
+## Phase 9 — Performance Tests (~15 tests) ✅ IMPLEMENTED (15 tests, 9 todo)
 
 > Benchmark critical hot paths. Set pass/fail thresholds.
+> **File:** `src/tests/performance/perf.test.ts`
+> Hardware-dependent tests (FFmpeg, Electron launch) registered as `it.todo`.
 
 ### 9.1 Timeline rendering
 
