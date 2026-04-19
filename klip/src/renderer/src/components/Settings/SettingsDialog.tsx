@@ -153,6 +153,7 @@ export default function SettingsDialog({ onClose, initialTab, initialHelpSearch 
             </h2>
             <button
               onClick={onClose}
+              aria-label="Close settings"
               className="w-6 h-6 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors duration-100"
             >
               <X size={14} />

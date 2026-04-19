@@ -319,6 +319,7 @@ function PaletteModal({ onClose }: { onClose: () => void }): JSX.Element {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Type a command…"
+            aria-label="Search commands"
             className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none"
           />
           <div className="flex items-center gap-1 shrink-0">

@@ -304,6 +304,7 @@ export default function ExportDialog({ onClose }: ExportDialogProps): JSX.Elemen
           {dialogState !== 'exporting' && (
             <button
               onClick={onClose}
+              aria-label="Close export dialog"
               className="flex items-center justify-center w-6 h-6 rounded text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors"
             >
               <X size={14} />

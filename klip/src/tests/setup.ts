@@ -8,7 +8,11 @@
  *   - console.error silenced by default (spy available per-test if needed)
  */
 import '@testing-library/jest-dom'
-import { vi, beforeEach, afterEach } from 'vitest'
+import { vi, beforeEach, afterEach, expect } from 'vitest'
+import { toHaveNoViolations } from 'jest-axe'
+
+// Extend expect with jest-axe's custom matcher (works in both jsdom and node envs)
+expect.extend(toHaveNoViolations)
 
 // ── window.api mock factory ────────────────────────────────────────────────────
 // Mirrors the full surface of src/preload/index.ts.

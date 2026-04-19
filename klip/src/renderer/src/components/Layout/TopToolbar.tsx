@@ -113,6 +113,8 @@ export default function TopToolbar({
         <Tooltip content={whatsThisActive ? 'Exit What\'s This mode  Esc' : 'What\'s This? — hover any element to learn what it does'}>
           <button
             onClick={onWhatsThisClick}
+            aria-label={whatsThisActive ? 'Exit What\'s This mode' : 'What\'s This?'}
+            aria-pressed={whatsThisActive}
             className={cn(
               'flex items-center justify-center w-7 h-7 rounded transition-all duration-100 active:scale-[0.93]',
               whatsThisActive
@@ -153,6 +155,7 @@ function ToolBtn({
         disabled={disabled}
         onClick={onClick}
         data-help={dataHelp}
+        aria-label={label}
         className={cn(
           'flex items-center justify-center w-7 h-7 rounded transition-all duration-100 active:scale-[0.93]',
           'disabled:opacity-35 disabled:pointer-events-none',
