@@ -81,23 +81,26 @@ function buildApiMock() {
 }
 
 // Assign a fresh mock before each test so call history never leaks between tests.
-beforeEach(() => {
-  ;(window as unknown as Record<string, unknown>).api = buildApiMock()
-  // Wipe Zustand persist data so store hydration always starts from defaults.
-  localStorage.clear()
-})
+// Guard: these globals don't exist in the Node (IPC) test environment.
+if (typeof window !== 'undefined') {
+  beforeEach(() => {
+    ;(window as unknown as Record<string, unknown>).api = buildApiMock()
+    // Wipe Zustand persist data so store hydration always starts from defaults.
+    localStorage.clear()
+  })
 
-// ── clipboard ──────────────────────────────────────────────────────────────────
-Object.defineProperty(navigator, 'clipboard', {
-  value: { writeText: vi.fn().mockResolvedValue(undefined) },
-  writable: true,
-  configurable: true,
-})
+  // ── clipboard ────────────────────────────────────────────────────────────────
+  Object.defineProperty(navigator, 'clipboard', {
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    writable: true,
+    configurable: true,
+  })
 
-// ── DOM method stubs ───────────────────────────────────────────────────────────
-// jsdom does not implement scrollIntoView — stub it so components that call it
-// (e.g. the CommandPalette active-item scroller) don't throw in tests.
-Element.prototype.scrollIntoView = vi.fn()
+  // ── DOM method stubs ──────────────────────────────────────────────────────────
+  // jsdom does not implement scrollIntoView — stub it so components that call it
+  // (e.g. the CommandPalette active-item scroller) don't throw in tests.
+  Element.prototype.scrollIntoView = vi.fn()
+}
 
 // ── console.error silencer ─────────────────────────────────────────────────────
 // React logs caught ErrorBoundary errors and act() warnings to console.error.

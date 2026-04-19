@@ -30,6 +30,10 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
+    environmentMatchGlobs: [
+      // Main-process / IPC tests run in Node — no DOM needed
+      ['src/tests/ipc/**', 'node']
+    ],
     setupFiles: ['src/tests/setup.ts'],
     include: ['src/tests/**/*.test.{ts,tsx}'],
     coverage: {

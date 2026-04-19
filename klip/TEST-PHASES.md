@@ -850,7 +850,9 @@ npx vitest run --grep "timelineStore"
 
 ---
 
-## Phase 5 — Integration: IPC / Main Process (~60 tests)
+## Phase 5 — Integration: IPC / Main Process (~60 tests) ✅ IMPLEMENTED (86 tests across 10 files)
+
+> **Files:** `src/tests/ipc/window-state.test.ts` (5) · `src/tests/ipc/settings-handlers.test.ts` (12) · `src/tests/ipc/project-handlers.test.ts` (13) · `src/tests/ipc/local-file-protocol.test.ts` (9) · `src/tests/ipc/ffmpeg-export.test.ts` (9) · `src/tests/ipc/ipc-contract.test.ts` (10) · `src/tests/ipc/window-handlers.test.ts` (6) · `src/tests/ipc/media-handlers.test.ts` (12) · `src/tests/ipc/waveform-handlers.test.ts` (6) · `src/tests/ipc/proxy-handlers.test.ts` (4)
 
 > Test main-process handlers in isolation. Use a real temp directory on disk.
 > Electron's `BrowserWindow` is not needed — IPC handlers are plain async functions.
