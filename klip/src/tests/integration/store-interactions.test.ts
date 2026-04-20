@@ -655,3 +655,423 @@ describe('4.5 appSettingsStore interactions', () => {
     expect(useAppSettingsStore.getState().defaultExportFolder).toBeNull()
   })
 })
+
+// =============================================================================
+// §4.6  Text overlay store → timeline round-trip
+// =============================================================================
+
+describe('4.6 Text overlay store → timeline round-trip', () => {
+  beforeEach(() => {
+    useTimelineStore.setState({
+      clips: [], tracks: [
+        { id: 'overlay1', type: 'overlay', name: 'Text', isLocked: false, isMuted: false, isSolo: false }
+      ],
+      transitions: [], markers: [],
+      selectedClipId: null, selectedClipIds: [],
+      past: [], future: []
+    })
+    useMediaStore.setState({ clips: [], selectedClipId: null })
+  })
+
+  it('adding a text clip sets type to "text"', () => {
+    const textClip = makeTimelineClip({
+      id: 'tc-text-1', type: 'text', trackId: 'overlay1',
+      mediaClipId: 'tc-text-1', duration: 5,
+      textSettings: {
+        content: 'Hello World', fontSize: 48, fontFamily: 'Arial',
+        fontColor: '#ffffff', bgColor: 'transparent',
+        bold: false, italic: false, alignment: 'center',
+        positionX: 0.5, positionY: 0.9, animationPreset: 'fade-in',
+      }
+    })
+    useTimelineStore.getState().addClip(textClip)
+
+    const clips = useTimelineStore.getState().clips
+    expect(clips[0].type).toBe('text')
+    expect(clips[0].textSettings?.content).toBe('Hello World')
+  })
+
+  it('setTextSettings updates the textSettings on the clip', () => {
+    const textClip = makeTimelineClip({
+      id: 'tc-text-2', type: 'text', trackId: 'overlay1', mediaClipId: 'tc-text-2',
+      textSettings: {
+        content: 'Initial', fontSize: 36, fontFamily: 'Arial',
+        fontColor: '#000000', bgColor: 'transparent',
+        bold: false, italic: false, alignment: 'left',
+        positionX: 0.5, positionY: 0.5, animationPreset: 'none',
+      }
+    })
+    useTimelineStore.setState({ clips: [textClip], past: [], future: [] })
+
+    useTimelineStore.getState().setTextSettings('tc-text-2', {
+      content: 'Updated', fontSize: 64, fontFamily: 'Impact',
+      fontColor: '#ff0000', bgColor: '#000000',
+      bold: true, italic: false, alignment: 'center',
+      positionX: 0.5, positionY: 0.15, animationPreset: 'slide-up',
+    })
+
+    const updated = useTimelineStore.getState().clips[0]
+    expect(updated.textSettings?.content).toBe('Updated')
+    expect(updated.textSettings?.bold).toBe(true)
+    expect(updated.textSettings?.animationPreset).toBe('slide-up')
+  })
+
+  it('serializeProject includes textSettings for a text clip', () => {
+    const textClip = makeTimelineClip({
+      id: 'tc-text-3', type: 'text', trackId: 'overlay1', mediaClipId: 'tc-text-3',
+      textSettings: {
+        content: 'Caption', fontSize: 48, fontFamily: 'Arial',
+        fontColor: '#ffffff', bgColor: 'transparent',
+        bold: false, italic: false, alignment: 'center',
+        positionX: 0.5, positionY: 0.9, animationPreset: 'none',
+      }
+    })
+    useTimelineStore.setState({ clips: [textClip], tracks: [], transitions: [], markers: [], past: [], future: [] })
+
+    const data = serializeProject() as Record<string, unknown>
+    const tc = (data.timelineClips as TimelineClip[])[0]
+
+    expect(tc.type).toBe('text')
+    expect(tc.textSettings?.content).toBe('Caption')
+    expect(tc.textSettings?.fontSize).toBe(48)
+  })
+
+  it('openProject restores text clip with textSettings intact', async () => {
+    const savedTextClip = makeTimelineClip({
+      id: 'restored-text', type: 'text', trackId: 'overlay1', mediaClipId: 'restored-text',
+      textSettings: {
+        content: 'Restored Caption', fontSize: 56, fontFamily: 'Georgia',
+        fontColor: '#ffff00', bgColor: '#333333',
+        bold: true, italic: true, alignment: 'right',
+        positionX: 0.8, positionY: 0.1, animationPreset: 'fade-in',
+      }
+    })
+
+    vi.mocked(window.api.project.open).mockResolvedValueOnce({
+      path: '/text-proj.klip',
+      data: {
+        version: 1, name: 'Text Test',
+        mediaClips: [],
+        tracks: [{ id: 'overlay1', type: 'overlay', name: 'Text', isLocked: false, isMuted: false, isSolo: false }],
+        timelineClips: [savedTextClip],
+        transitions: [], markers: [],
+        settings: { resolution: '1080p', frameRate: 60, aspectRatio: '16:9' }
+      }
+    })
+
+    await openProject('/text-proj.klip')
+
+    const clips = useTimelineStore.getState().clips
+    expect(clips).toHaveLength(1)
+    expect(clips[0].type).toBe('text')
+    expect(clips[0].textSettings?.content).toBe('Restored Caption')
+    expect(clips[0].textSettings?.bold).toBe(true)
+    expect(clips[0].textSettings?.animationPreset).toBe('fade-in')
+  })
+
+  it('text clip on overlay track has correct trackId after openProject', async () => {
+    const savedTextClip = makeTimelineClip({
+      id: 'track-check', type: 'text', trackId: 'overlay1', mediaClipId: 'track-check',
+      textSettings: {
+        content: 'Track Test', fontSize: 48, fontFamily: 'Arial',
+        fontColor: '#fff', bgColor: 'transparent',
+        bold: false, italic: false, alignment: 'center',
+        positionX: 0.5, positionY: 0.5, animationPreset: 'none',
+      }
+    })
+
+    vi.mocked(window.api.project.open).mockResolvedValueOnce({
+      path: '/track.klip',
+      data: {
+        version: 1, name: 'Track Test',
+        mediaClips: [],
+        tracks: [{ id: 'overlay1', type: 'overlay', name: 'Text', isLocked: false, isMuted: false, isSolo: false }],
+        timelineClips: [savedTextClip],
+        transitions: [], markers: [],
+        settings: { resolution: '1080p', frameRate: 60, aspectRatio: '16:9' }
+      }
+    })
+
+    await openProject('/track.klip')
+
+    expect(useTimelineStore.getState().clips[0].trackId).toBe('overlay1')
+  })
+})
+
+// =============================================================================
+// §4.7  Transition store → serialize/deserialize round-trip
+// =============================================================================
+
+describe('4.7 Transition store → serialize/deserialize round-trip', () => {
+  beforeEach(() => {
+    useTimelineStore.setState({
+      clips: [], tracks: [], transitions: [], markers: [],
+      selectedClipId: null, selectedClipIds: [],
+      past: [], future: []
+    })
+    useMediaStore.setState({ clips: [], selectedClipId: null })
+  })
+
+  it('addTransition stores a fade transition', () => {
+    useTimelineStore.getState().addTransition({
+      id: 'tr-1', fromClipId: 'clip-a', toClipId: 'clip-b', type: 'fade', duration: 0.5
+    })
+
+    const { transitions } = useTimelineStore.getState()
+    expect(transitions).toHaveLength(1)
+    expect(transitions[0].type).toBe('fade')
+    expect(transitions[0].duration).toBe(0.5)
+  })
+
+  it('addTransition stores a dip-to-black transition', () => {
+    useTimelineStore.getState().addTransition({
+      id: 'tr-2', fromClipId: 'clip-c', toClipId: 'clip-d', type: 'dip-to-black', duration: 1.0
+    })
+
+    const { transitions } = useTimelineStore.getState()
+    expect(transitions[0].type).toBe('dip-to-black')
+    expect(transitions[0].duration).toBe(1.0)
+  })
+
+  it('adding the same clip pair twice replaces the existing transition', () => {
+    useTimelineStore.getState().addTransition({
+      id: 'tr-old', fromClipId: 'clip-x', toClipId: 'clip-y', type: 'fade', duration: 0.5
+    })
+    useTimelineStore.getState().addTransition({
+      id: 'tr-new', fromClipId: 'clip-x', toClipId: 'clip-y', type: 'dip-to-black', duration: 1.5
+    })
+
+    const { transitions } = useTimelineStore.getState()
+    expect(transitions).toHaveLength(1)
+    expect(transitions[0].type).toBe('dip-to-black')
+    expect(transitions[0].duration).toBe(1.5)
+  })
+
+  it('removeTransition clears the transition', () => {
+    useTimelineStore.getState().addTransition({
+      id: 'tr-del', fromClipId: 'clip-e', toClipId: 'clip-f', type: 'fade', duration: 0.5
+    })
+    useTimelineStore.getState().removeTransition('tr-del')
+
+    expect(useTimelineStore.getState().transitions).toHaveLength(0)
+  })
+
+  it('serializeProject persists transitions', () => {
+    useTimelineStore.setState({
+      transitions: [
+        { id: 'tr-ser', fromClipId: 'clip-a', toClipId: 'clip-b', type: 'fade', duration: 0.75 }
+      ],
+      clips: [], tracks: [], markers: [], selectedClipId: null, selectedClipIds: [], past: [], future: []
+    })
+
+    const data = serializeProject() as Record<string, unknown>
+    const transitions = data.transitions as typeof useTimelineStore.getState.prototype[]
+
+    expect(transitions).toHaveLength(1)
+    expect((transitions[0] as any).type).toBe('fade')
+    expect((transitions[0] as any).duration).toBe(0.75)
+  })
+
+  it('openProject restores transitions with correct type and duration', async () => {
+    vi.mocked(window.api.project.open).mockResolvedValueOnce({
+      path: '/trans.klip',
+      data: {
+        version: 1, name: 'Transitions',
+        mediaClips: [], tracks: [],
+        timelineClips: [],
+        transitions: [
+          { id: 'tr-load', fromClipId: 'vid-1', toClipId: 'vid-2', type: 'dip-to-black', duration: 2.0 }
+        ],
+        markers: [],
+        settings: { resolution: '1080p', frameRate: 60, aspectRatio: '16:9' }
+      }
+    })
+
+    await openProject('/trans.klip')
+
+    const { transitions } = useTimelineStore.getState()
+    expect(transitions).toHaveLength(1)
+    expect(transitions[0].type).toBe('dip-to-black')
+    expect(transitions[0].duration).toBe(2.0)
+    expect(transitions[0].fromClipId).toBe('vid-1')
+    expect(transitions[0].toClipId).toBe('vid-2')
+  })
+
+  it('removeClip also removes transitions referencing that clip', () => {
+    useTimelineStore.setState({
+      clips: [
+        makeTimelineClip({ id: 'vid-a' }),
+        makeTimelineClip({ id: 'vid-b' }),
+      ],
+      transitions: [
+        { id: 'tr-linked', fromClipId: 'vid-a', toClipId: 'vid-b', type: 'fade', duration: 0.5 }
+      ],
+      tracks: [], markers: [], selectedClipId: null, selectedClipIds: [], past: [], future: []
+    })
+
+    useTimelineStore.getState().removeClip('vid-a')
+
+    expect(useTimelineStore.getState().transitions).toHaveLength(0)
+  })
+})
+
+// =============================================================================
+// §4.8  Speed / zoom / color-grade properties survive save/load
+// =============================================================================
+
+describe('4.8 Speed / zoom / color-grade properties survive save/load', () => {
+  beforeEach(() => {
+    useTimelineStore.setState({
+      clips: [], tracks: [], transitions: [], markers: [],
+      selectedClipId: null, selectedClipIds: [],
+      past: [], future: []
+    })
+    useMediaStore.setState({ clips: [], selectedClipId: null })
+    useProjectStore.setState({
+      projectName: null, projectPath: null,
+      hasUnsavedChanges: false,
+      settings: { resolution: '1080p', frameRate: 60, aspectRatio: '16:9' }
+    })
+  })
+
+  it('setClipSpeed clamps to [0.1, 16]', () => {
+    const clip = makeTimelineClip({ id: 'spd-1' })
+    useTimelineStore.setState({ clips: [clip], past: [], future: [] })
+
+    useTimelineStore.getState().setClipSpeed('spd-1', 0.001)
+    expect(useTimelineStore.getState().clips[0].speed).toBeCloseTo(0.1, 5)
+
+    useTimelineStore.getState().setClipSpeed('spd-1', 999)
+    expect(useTimelineStore.getState().clips[0].speed).toBe(16)
+  })
+
+  it('setClipSpeed stores the speed value on the clip', () => {
+    const clip = makeTimelineClip({ id: 'spd-2' })
+    useTimelineStore.setState({ clips: [clip], past: [], future: [] })
+
+    useTimelineStore.getState().setClipSpeed('spd-2', 2)
+
+    expect(useTimelineStore.getState().clips[0].speed).toBe(2)
+  })
+
+  it('setColorSettings stores brightness/contrast/saturation', () => {
+    const clip = makeTimelineClip({ id: 'col-1' })
+    useTimelineStore.setState({ clips: [clip], past: [], future: [] })
+
+    useTimelineStore.getState().setColorSettings('col-1', { brightness: 0.3, contrast: -0.2, saturation: 0.5 })
+
+    const { colorSettings } = useTimelineStore.getState().clips[0]
+    expect(colorSettings?.brightness).toBeCloseTo(0.3)
+    expect(colorSettings?.contrast).toBeCloseTo(-0.2)
+    expect(colorSettings?.saturation).toBeCloseTo(0.5)
+  })
+
+  it('setColorSettings(undefined) clears color settings', () => {
+    const clip = makeTimelineClip({ id: 'col-2', colorSettings: { brightness: 0.5, contrast: 0, saturation: 0 } })
+    useTimelineStore.setState({ clips: [clip], past: [], future: [] })
+
+    useTimelineStore.getState().setColorSettings('col-2', undefined)
+
+    expect(useTimelineStore.getState().clips[0].colorSettings).toBeUndefined()
+  })
+
+  it('setCropSettings stores zoom/panX/panY', () => {
+    const clip = makeTimelineClip({ id: 'crop-1' })
+    useTimelineStore.setState({ clips: [clip], past: [], future: [] })
+
+    useTimelineStore.getState().setCropSettings('crop-1', { zoom: 2.5, panX: 0.1, panY: -0.2 })
+
+    const { cropSettings } = useTimelineStore.getState().clips[0]
+    expect(cropSettings?.zoom).toBeCloseTo(2.5)
+    expect(cropSettings?.panX).toBeCloseTo(0.1)
+    expect(cropSettings?.panY).toBeCloseTo(-0.2)
+  })
+
+  it('serializeProject preserves speed, colorSettings, and cropSettings', () => {
+    const clip = makeTimelineClip({
+      id: 'full-clip',
+      speed: 0.5,
+      colorSettings: { brightness: 0.2, contrast: 0.1, saturation: -0.3 },
+      cropSettings: { zoom: 1.5, panX: 0.05, panY: 0 },
+    })
+    useTimelineStore.setState({ clips: [clip], tracks: [], transitions: [], markers: [], past: [], future: [] })
+
+    const data = serializeProject() as Record<string, unknown>
+    const tc = (data.timelineClips as TimelineClip[])[0]
+
+    expect(tc.speed).toBe(0.5)
+    expect(tc.colorSettings?.brightness).toBeCloseTo(0.2)
+    expect(tc.colorSettings?.contrast).toBeCloseTo(0.1)
+    expect(tc.cropSettings?.zoom).toBe(1.5)
+    expect(tc.cropSettings?.panX).toBeCloseTo(0.05)
+  })
+
+  it('openProject restores speed, colorSettings, and cropSettings', async () => {
+    const savedClip = makeTimelineClip({
+      id: 'phase6-restored',
+      speed: 0.25,
+      colorSettings: { brightness: -0.5, contrast: 0.3, saturation: 1.0 },
+      cropSettings: { zoom: 3.0, panX: -0.25, panY: 0.1 },
+    })
+
+    vi.mocked(window.api.project.open).mockResolvedValueOnce({
+      path: '/phase6.klip',
+      data: {
+        version: 1, name: 'Phase 6 Props',
+        mediaClips: [], tracks: [],
+        timelineClips: [savedClip],
+        transitions: [], markers: [],
+        settings: { resolution: '1080p', frameRate: 60, aspectRatio: '16:9' }
+      }
+    })
+
+    await openProject('/phase6.klip')
+
+    const clip = useTimelineStore.getState().clips[0]
+    expect(clip.speed).toBe(0.25)
+    expect(clip.colorSettings?.brightness).toBeCloseTo(-0.5)
+    expect(clip.colorSettings?.saturation).toBe(1.0)
+    expect(clip.cropSettings?.zoom).toBe(3.0)
+    expect(clip.cropSettings?.panX).toBeCloseTo(-0.25)
+  })
+
+  it('clip role (intro/outro) is preserved through serialize/open', async () => {
+    const introClip = makeTimelineClip({ id: 'intro-clip', role: 'intro' })
+
+    vi.mocked(window.api.project.open).mockResolvedValueOnce({
+      path: '/roles.klip',
+      data: {
+        version: 1, name: 'Roles Test',
+        mediaClips: [], tracks: [],
+        timelineClips: [introClip],
+        transitions: [], markers: [],
+        settings: { resolution: '1080p', frameRate: 60, aspectRatio: '16:9' }
+      }
+    })
+
+    await openProject('/roles.klip')
+
+    expect(useTimelineStore.getState().clips[0].role).toBe('intro')
+  })
+
+  it('audio fade in/out values are preserved through serialize/open', async () => {
+    const audioClip = makeTimelineClip({ id: 'fades-clip', type: 'audio', fadeIn: 0.5, fadeOut: 1.0 })
+
+    vi.mocked(window.api.project.open).mockResolvedValueOnce({
+      path: '/fades.klip',
+      data: {
+        version: 1, name: 'Fades Test',
+        mediaClips: [], tracks: [],
+        timelineClips: [audioClip],
+        transitions: [], markers: [],
+        settings: { resolution: '1080p', frameRate: 60, aspectRatio: '16:9' }
+      }
+    })
+
+    await openProject('/fades.klip')
+
+    const clip = useTimelineStore.getState().clips[0]
+    expect(clip.fadeIn).toBe(0.5)
+    expect(clip.fadeOut).toBe(1.0)
+  })
+})
