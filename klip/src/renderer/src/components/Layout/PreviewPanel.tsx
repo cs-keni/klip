@@ -895,10 +895,10 @@ export default function PreviewPanel(): JSX.Element {
       video.src = url
       video.load()
       video.addEventListener('loadedmetadata', () => {
-        if (!isPlayingRef.current) video.currentTime = offset
+        if (!isPlayingRef.current && Number.isFinite(offset)) video.currentTime = offset
       }, { once: true })
     } else {
-      video.currentTime = offset
+      if (Number.isFinite(offset)) video.currentTime = offset
     }
   }, [playheadTime, activeMediaClip?.id, activeTimelineClip?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -963,10 +963,14 @@ export default function PreviewPanel(): JSX.Element {
       tv.src = url
       tv.load()
       tv.addEventListener('loadedmetadata', () => {
-        tv.currentTime = Math.max(0, Math.min(seekSrc, tv.duration ?? seekSrc))
+        // tv.duration is finite here (loadedmetadata guarantees it)
+        if (Number.isFinite(seekSrc))
+          tv.currentTime = Math.max(0, Math.min(seekSrc, tv.duration))
       }, { once: true })
     } else {
-      tv.currentTime = Math.max(0, Math.min(seekSrc, tv.duration ?? seekSrc))
+      // tv.duration is NaN when metadata hasn't loaded yet; ?? doesn't catch NaN
+      if (Number.isFinite(seekSrc) && Number.isFinite(tv.duration))
+        tv.currentTime = Math.max(0, Math.min(seekSrc, tv.duration))
     }
 
     return () => {

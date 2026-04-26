@@ -248,3 +248,32 @@ describe('REG-010', () => {
     expect(musicBtn).toHaveAttribute('data-help', 'music-library')
   })
 })
+
+// ---------------------------------------------------------------------------
+// REG-011 — Thumbnail video NaN currentTime crash after clip trim
+// Bug: When the scrub-bar hover thumbnail video element had not yet loaded its
+//      metadata (duration === NaN), the expression `tv.duration ?? seekSrc`
+//      returned NaN instead of seekSrc because `??` only guards null/undefined.
+//      Setting currentTime = NaN throws "non-finite" TypeError in Chromium.
+//      Triggered by trimming a clip while scrubHover was still set.
+// ---------------------------------------------------------------------------
+describe('REG-011', () => {
+  it('thumbnail seekSrc clamping never produces a NaN currentTime', () => {
+    // Replicate the exact expression that was buggy.
+    // Before fix: Math.max(0, Math.min(seekSrc, tv.duration ?? seekSrc))
+    // After fix:  Number.isFinite(tv.duration) && Number.isFinite(seekSrc)
+    //             → Math.max(0, Math.min(seekSrc, tv.duration))
+    const seekSrc = 3.5   // valid time within clip
+    const nanDuration = NaN  // metadata not loaded yet
+
+    // OLD (broken) expression
+    const broken = Math.max(0, Math.min(seekSrc, nanDuration ?? seekSrc))
+    expect(Number.isFinite(broken)).toBe(false)  // confirms the bug existed
+
+    // NEW (fixed) guard
+    const fixed = (Number.isFinite(seekSrc) && Number.isFinite(nanDuration))
+      ? Math.max(0, Math.min(seekSrc, nanDuration))
+      : null  // skip the assignment
+    expect(fixed).toBeNull()  // correctly skips when duration is NaN
+  })
+})
