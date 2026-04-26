@@ -95,11 +95,14 @@ interface TimelineState {
   setPxPerSec: (pxPerSec: number) => void
 
   // ── Track actions ─────────────────────────────────────────────────────────
-  renameTrack: (trackId: string, name: string) => void
-  toggleMute:  (trackId: string) => void
-  toggleSolo:  (trackId: string) => void
-  toggleLock:  (trackId: string) => void
-  toggleSnap:  () => void
+  renameTrack:         (trackId: string, name: string) => void
+  toggleMute:          (trackId: string) => void
+  toggleSolo:          (trackId: string) => void
+  toggleLock:          (trackId: string) => void
+  toggleSnap:          () => void
+  toggleTrackCollapse: (trackId: string) => void
+  addTrack:            (type: import('@/types/timeline').TrackType) => void
+  removeTrack:         (trackId: string) => void
 
   // ── Master volume ──────────────────────────────────────────────────────────
   masterVolume: number
@@ -108,6 +111,12 @@ interface TimelineState {
   // ── Clip audio ────────────────────────────────────────────────────────────
   setClipVolume: (clipId: string, volume: number) => void
   setClipFades:  (clipId: string, fadeIn: number, fadeOut: number) => void
+
+  // ── Phase 10 clip actions ─────────────────────────────────────────────────
+  setClipLabelColor: (clipId: string, color: string | undefined) => void
+  renameClip:        (clipId: string, name: string) => void
+  extractAudio:      (videoClipId: string) => void
+  pasteClipsWithRipple: () => void
 
   // ── Phase 6 clip actions ──────────────────────────────────────────────────
   setClipSpeed:     (clipId: string, speed: number) => void
@@ -125,6 +134,7 @@ interface TimelineState {
   addMarker:         (time: number) => void
   removeMarker:      (id: string) => void
   updateMarkerLabel: (id: string, label: string) => void
+  updateMarkerColor: (id: string, color: string) => void
 
   // ── History ───────────────────────────────────────────────────────────────
   undo: () => void
@@ -475,9 +485,12 @@ export const useTimelineStore = create<TimelineState>((set) => ({
   rippleDeleteSelected: () =>
     set((s) => {
       if (s.selectedClipIds.length === 0) return s
-      // Process each selected clip as a ripple delete, sorted by startTime desc
-      // so earlier clips don't shift indices for later ones
       const ids = new Set(s.selectedClipIds)
+      // Also pull in any linked clips (audio pairs of selected video clips)
+      for (const selId of s.selectedClipIds) {
+        const linked = s.clips.find((c) => c.id === selId)?.linkedClipId
+        if (linked) ids.add(linked)
+      }
       const toDelete = s.clips
         .filter((c) => ids.has(c.id))
         .sort((a, b) => a.startTime - b.startTime)
@@ -486,20 +499,20 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       let transitions = [...s.transitions]
 
       for (const del of toDelete) {
-        const gapEnd = del.startTime + del.duration
-        // Remove this clip and shift subsequent clips on same track
+        // Look up the clip's current position — earlier iterations may have shifted it
+        const current = clips.find((c) => c.id === del.id)
+        if (!current) continue
+        const gapEnd = current.startTime + current.duration
         clips = clips
           .filter((c) => c.id !== del.id)
           .map((c) =>
             c.trackId === del.trackId && c.startTime >= gapEnd - 0.001
-              ? { ...c, startTime: c.startTime - del.duration }
+              ? { ...c, startTime: c.startTime - current.duration }
               : c
           )
         transitions = transitions.filter(
           (t) => t.fromClipId !== del.id && t.toClipId !== del.id
         )
-        // Update del.startTime for subsequent deleted clips on the same track
-        // (they shifted too, but we process by original order so no re-lookup needed)
       }
 
       return {
@@ -526,11 +539,16 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       const minStart = Math.min(...s.clipboard.map((c) => c.startTime))
       const offset = playhead - minStart
 
+      // Build old→new ID map so linked pairs (video+audio) are re-wired correctly
+      const idMap = new Map(s.clipboard.map((c) => [c.id, crypto.randomUUID()]))
       const pasted: TimelineClip[] = s.clipboard.map((c) => ({
         ...c,
-        id: crypto.randomUUID(),
+        id: idMap.get(c.id)!,
         startTime: Math.max(0, c.startTime + offset),
-        linkedClipId: undefined  // don't carry over dangling link refs
+        // Re-wire links within this paste batch; drop links to clips not in the batch
+        linkedClipId: c.linkedClipId && idMap.has(c.linkedClipId)
+          ? idMap.get(c.linkedClipId)
+          : undefined
       }))
 
       const newIds = pasted.map((c) => c.id)
@@ -563,13 +581,27 @@ export const useTimelineStore = create<TimelineState>((set) => ({
 
       if (gapSize < 0.05) return s
 
-      // Shift all clips starting at or after gapStartTime on this track
+      // Collect IDs of clips being shifted, then also collect their linked
+      // counterparts so video and audio stay in sync across tracks.
+      const shiftedIds = new Set(
+        s.clips
+          .filter((c) => c.trackId === trackId && c.startTime >= gapStartTime - 0.1)
+          .map((c) => c.id)
+      )
+      const linkedIds = new Set(
+        s.clips
+          .filter((c) => shiftedIds.has(c.id) && c.linkedClipId)
+          .map((c) => c.linkedClipId!)
+      )
+
       return {
         past: [...s.past.slice(-49), snapshot(s)],
         future: [],
         clips: s.clips.map((c) => {
-          if (c.trackId !== trackId) return c
-          if (c.startTime >= gapStartTime - 0.1) {
+          if (c.trackId === trackId && c.startTime >= gapStartTime - 0.1) {
+            return { ...c, startTime: Math.max(0, c.startTime - gapSize) }
+          }
+          if (linkedIds.has(c.id)) {
             return { ...c, startTime: Math.max(0, c.startTime - gapSize) }
           }
           return c
@@ -654,8 +686,8 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       const leftVideo: TimelineClip = {
         ...src,
         duration: offset,
-        linkedClipId: rightAudioId ? undefined : src.linkedClipId
-        // left video loses link — the right halves re-link to each other
+        // Keep the link to the left audio half; right halves re-link to each other
+        linkedClipId: linkedAudio ? linkedAudio.id : src.linkedClipId
       }
 
       // ── Right video ───────────────────────────────────────────────────────
@@ -683,7 +715,7 @@ export const useTimelineStore = create<TimelineState>((set) => ({
 
       // ── Left audio (reuses linkedAudio.id) ───────────────────────────────
       const leftAudio: TimelineClip | null = linkedAudio
-        ? { ...linkedAudio, duration: offset, linkedClipId: undefined }
+        ? { ...linkedAudio, duration: offset, linkedClipId: src.id }
         : null
 
       // ── Right audio ───────────────────────────────────────────────────────
@@ -825,6 +857,134 @@ export const useTimelineStore = create<TimelineState>((set) => ({
     set((s) => ({
       markers: s.markers.map((m) => m.id === id ? { ...m, label } : m)
     })),
+
+  updateMarkerColor: (id, color) =>
+    set((s) => ({
+      markers: s.markers.map((m) => m.id === id ? { ...m, color } : m)
+    })),
+
+  // ── Phase 10 clip actions ─────────────────────────────────────────────────
+
+  setClipLabelColor: (clipId, color) =>
+    set((s) => ({
+      clips: s.clips.map((c) => c.id === clipId ? { ...c, labelColor: color } : c)
+    })),
+
+  renameClip: (clipId, name) =>
+    set((s) => ({
+      clips: s.clips.map((c) => c.id === clipId ? { ...c, name } : c)
+    })),
+
+  extractAudio: (videoClipId) =>
+    set((s) => {
+      const src = s.clips.find((c) => c.id === videoClipId)
+      if (!src || src.type !== 'video') return s
+
+      // Find or create an 'a2' track
+      const a2Track = s.tracks.find((t) => t.id === 'a2') ?? s.tracks.find((t) => t.type === 'audio')
+      if (!a2Track) return s
+
+      const newAudioId = crypto.randomUUID()
+      const extractedClip: TimelineClip = {
+        ...src,
+        id:           newAudioId,
+        trackId:      a2Track.id,
+        type:         'audio',
+        linkedClipId: undefined
+      }
+
+      return {
+        past: [...s.past.slice(-49), snapshot(s)],
+        future: [],
+        clips: [
+          ...s.clips.map((c) =>
+            c.id === videoClipId || c.id === src.linkedClipId
+              ? { ...c, linkedClipId: undefined }
+              : c
+          ),
+          extractedClip
+        ]
+      }
+    }),
+
+  pasteClipsWithRipple: () =>
+    set((s) => {
+      if (!s.clipboard || s.clipboard.length === 0) return s
+      const playhead = s.playheadTime
+      const minStart = Math.min(...s.clipboard.map((c) => c.startTime))
+      const offset   = playhead - minStart
+
+      const idMap = new Map(s.clipboard.map((c) => [c.id, crypto.randomUUID()]))
+      const pasted: TimelineClip[] = s.clipboard.map((c) => ({
+        ...c,
+        id: idMap.get(c.id)!,
+        startTime: Math.max(0, c.startTime + offset),
+        linkedClipId: c.linkedClipId && idMap.has(c.linkedClipId)
+          ? idMap.get(c.linkedClipId)
+          : undefined
+      }))
+
+      const maxEnd = Math.max(...pasted.map((c) => c.startTime + c.duration))
+      const rippleShift = maxEnd - playhead
+
+      const shifted = s.clips.map((c) =>
+        c.startTime >= playhead - 0.001
+          ? { ...c, startTime: c.startTime + rippleShift }
+          : c
+      )
+
+      const newIds = pasted.map((c) => c.id)
+      return {
+        past: [...s.past.slice(-49), snapshot(s)],
+        future: [],
+        clips: [...shifted, ...pasted],
+        selectedClipId:  newIds[0] ?? null,
+        selectedClipIds: newIds
+      }
+    }),
+
+  // ── Phase 10 track actions ────────────────────────────────────────────────
+
+  toggleTrackCollapse: (trackId) =>
+    set((s) => ({
+      tracks: s.tracks.map((t) =>
+        t.id === trackId ? { ...t, isCollapsed: !t.isCollapsed } : t
+      )
+    })),
+
+  addTrack: (type) =>
+    set((s) => {
+      const count = s.tracks.filter((t) => t.type === type).length + 1
+      const names: Record<string, string> = {
+        video: `Video ${count}`, audio: `Audio ${count}`,
+        music: `Music ${count}`, overlay: `Text ${count}`
+      }
+      const newTrack: Track = {
+        id: crypto.randomUUID(),
+        type,
+        name: names[type] ?? `Track ${count}`,
+        isLocked: false,
+        isMuted: false,
+        isSolo: false
+      }
+      return {
+        past: [...s.past.slice(-49), snapshot(s)],
+        future: [],
+        tracks: [...s.tracks, newTrack]
+      }
+    }),
+
+  removeTrack: (trackId) =>
+    set((s) => {
+      const hasClips = s.clips.some((c) => c.trackId === trackId)
+      const isSystem = ['v1', 'a1', 'a2', 'm1', 'overlay1'].includes(trackId)
+      if (hasClips || isSystem) return s
+      return {
+        past: [...s.past.slice(-49), snapshot(s)],
+        future: [],
+        tracks: s.tracks.filter((t) => t.id !== trackId)
+      }
+    }),
 
   // ── History ──────────────────────────────────────────────────────────────
 

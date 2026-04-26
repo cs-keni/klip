@@ -52,8 +52,20 @@ export default function PreviewPanel(): JSX.Element {
   // ── Panel ref for fullscreen ──────────────────────────────────────────────
   const panelRef = useRef<HTMLDivElement>(null)
 
-  // ── Canvas ref — bounds used for text drag-to-position ────────────────────
+  // ── Canvas ref + measured height (for WYSIWYG text font size) ────────────
   const canvasRef = useRef<HTMLDivElement>(null)
+  const [canvasHeight, setCanvasHeight] = useState(0)
+
+  useEffect(() => {
+    const el = canvasRef.current
+    if (!el) return
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect.height ?? 0
+      if (h > 0) setCanvasHeight(h)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   // ── Speed selector open ───────────────────────────────────────────────────
   const [showSpeedMenu, setShowSpeedMenu] = useState(false)
@@ -129,6 +141,7 @@ export default function PreviewPanel(): JSX.Element {
   const [isClipping, setIsClipping]   = useState(false)
   const clipFlashRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
   const audioCtxRef   = useRef<AudioContext | null>(null)
+  const gainNodeRef   = useRef<GainNode | null>(null)
   const analyserLRef  = useRef<AnalyserNode | null>(null)
   const analyserRRef  = useRef<AnalyserNode | null>(null)
   const meterRafRef   = useRef<number | null>(null)
@@ -186,6 +199,7 @@ export default function PreviewPanel(): JSX.Element {
       audioCtxRef.current = ctx
 
       const source    = ctx.createMediaElementSource(video)
+      const gainNode  = ctx.createGain()
       const splitter  = ctx.createChannelSplitter(2)
       const analyserL = ctx.createAnalyser()
       const analyserR = ctx.createAnalyser()
@@ -194,13 +208,16 @@ export default function PreviewPanel(): JSX.Element {
       analyserL.fftSize = 256
       analyserR.fftSize = 256
 
-      source.connect(splitter)
+      // source → gainNode (fade envelopes) → splitter → analysers → destination
+      source.connect(gainNode)
+      gainNode.connect(splitter)
       splitter.connect(analyserL, 0)
       splitter.connect(analyserR, 1)
       analyserL.connect(merger, 0, 0)
       analyserR.connect(merger, 0, 1)
       merger.connect(ctx.destination)
 
+      gainNodeRef.current = gainNode
       analyserLRef.current = analyserL
       analyserRRef.current = analyserR
       mediaSourceConnected.current = true
@@ -340,6 +357,45 @@ export default function PreviewPanel(): JSX.Element {
     video.style.opacity   = '1'
   }
 
+  // Schedule Web Audio gain ramps so fade-in / fade-out are audible during preview.
+  // Mirrors the FFmpeg afade filters applied at export.
+  function scheduleGainRamps(clip: TimelineClip, fromPlayhead: number) {
+    const ctx  = audioCtxRef.current
+    const gain = gainNodeRef.current
+    if (!ctx || !gain) return
+
+    const fadeIn  = clip.fadeIn  ?? 0
+    const fadeOut = clip.fadeOut ?? 0
+    const now     = ctx.currentTime
+
+    gain.gain.cancelScheduledValues(now)
+    gain.gain.setValueAtTime(1, now)
+
+    const offsetInClip = fromPlayhead - clip.startTime
+
+    if (fadeIn > 0 && offsetInClip < fadeIn) {
+      const progress = offsetInClip / fadeIn
+      gain.gain.setValueAtTime(progress, now)
+      gain.gain.linearRampToValueAtTime(1, now + (fadeIn - offsetInClip))
+    }
+
+    if (fadeOut > 0) {
+      const clipEnd        = clip.startTime + clip.duration
+      const fadeOutStart   = clipEnd - fadeOut
+      const timeToFadeOut  = fadeOutStart - fromPlayhead
+
+      if (timeToFadeOut > 0) {
+        gain.gain.setValueAtTime(1, now + timeToFadeOut)
+        gain.gain.linearRampToValueAtTime(0, now + timeToFadeOut + fadeOut)
+      } else {
+        // Already inside the fade-out region
+        const progress = (fromPlayhead - fadeOutStart) / fadeOut
+        gain.gain.setValueAtTime(1 - progress, now)
+        gain.gain.linearRampToValueAtTime(0, now + (clipEnd - fromPlayhead))
+      }
+    }
+  }
+
   // ── Video loading events ──────────────────────────────────────────────────
   useEffect(() => {
     const video = videoRef.current
@@ -395,6 +451,13 @@ export default function PreviewPanel(): JSX.Element {
     audioRef.current?.pause()
     clearClipEffects()
     setIsPlaying(false)
+    // Reset fade gain so the next clip doesn't inherit a mid-ramp value
+    const ctx  = audioCtxRef.current
+    const gain = gainNodeRef.current
+    if (ctx && gain) {
+      gain.gain.cancelScheduledValues(ctx.currentTime)
+      gain.gain.setValueAtTime(1, ctx.currentTime)
+    }
     // Do NOT reset shuttleSpeed here — callers manage that (Space/K key, play button)
   }
 
@@ -512,6 +575,7 @@ export default function PreviewPanel(): JSX.Element {
       const effectiveRate = speed * previewSpeedRef.current * (shuttle > 0 ? shuttle : 1)
       v.playbackRate = Math.min(16, Math.max(0.0625, effectiveRate))
       applyClipEffects(tlClip)
+      scheduleGainRamps(tlClip, fromPlayhead)
       v.play().catch((err) => {
         if (isPlayingRef.current && (err as DOMException).name !== 'AbortError') stopPlayback()
       })
@@ -1264,6 +1328,7 @@ export default function PreviewPanel(): JSX.Element {
               settings={clip.textSettings}
               isSelected={clip.id === selectedClipId}
               canvasRef={canvasRef}
+              canvasHeight={canvasHeight}
               onPositionChange={(px, py) =>
                 setTextSettings(clip.id, { ...clip.textSettings!, positionX: px, positionY: py })
               }
@@ -1317,20 +1382,24 @@ export default function PreviewPanel(): JSX.Element {
               {/* Progress / scrub bar */}
               <div
                 className="relative px-3 pb-1 pt-2 cursor-pointer group/bar"
-                onClick={(e) => {
+                onPointerDown={(e) => {
                   if (totalDuration <= 0) return
+                  e.currentTarget.setPointerCapture(e.pointerId)
+                  setIsPlaying(false)
                   const rect = scrubBarRef.current?.getBoundingClientRect()
                   if (!rect) return
                   const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
                   seekTo(fraction * totalDuration)
                 }}
-                onMouseMove={(e) => {
+                onPointerMove={(e) => {
                   if (totalDuration <= 0) return
                   const rect = scrubBarRef.current?.getBoundingClientRect()
                   if (!rect) return
                   const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
                   setScrubHover({ frac: fraction, clientX: e.clientX })
+                  if (e.buttons === 1) seekTo(fraction * totalDuration)
                 }}
+                onPointerUp={() => { /* pointer capture auto-released */ }}
                 onMouseLeave={() => {
                   setScrubHover(null)
                   setThumbUrl(null)
@@ -1397,28 +1466,24 @@ export default function PreviewPanel(): JSX.Element {
                       style={{ left: `${scrubHover.frac * 100}%` }}
                     />
                   )}
-                  <div
+                  <motion.div
                     className="absolute top-1/2 w-3 h-3 rounded-full bg-white shadow opacity-0 group-hover/bar:opacity-100 transition-opacity duration-150 pointer-events-none -translate-x-1/2 -translate-y-1/2"
                     style={{ left: `${progressFraction * 100}%` }}
+                    whileDrag={{ scale: 1.4 }}
+                    drag="x"
                   />
                 </div>
               </div>
 
               {/* Transport row */}
               <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-t from-black/80 to-transparent">
-                {/* Timecode — current / total */}
+                {/* Timecode — click to edit */}
                 <div className="flex items-center gap-1 w-[140px] shrink-0">
-                  <span className="text-[11px] font-mono text-[var(--text-secondary)]">
-                    {formatTimecode(playheadTime)}
-                  </span>
-                  {totalDuration > 0 && (
-                    <>
-                      <span className="text-[10px] text-[var(--text-muted)]">/</span>
-                      <span className="text-[10px] font-mono text-[var(--text-muted)]">
-                        {formatTimecode(totalDuration)}
-                      </span>
-                    </>
-                  )}
+                  <TimecodeEditor
+                    time={playheadTime}
+                    totalDuration={totalDuration}
+                    onSeek={seekTo}
+                  />
                 </div>
 
                 <div className="flex-1 flex items-center justify-center gap-1">
@@ -1688,12 +1753,14 @@ function TextOverlay({
   settings,
   isSelected,
   canvasRef,
+  canvasHeight,
   onPositionChange
 }: {
   clipId: string
   settings: TextSettings
   isSelected: boolean
   canvasRef: React.RefObject<HTMLDivElement>
+  canvasHeight: number
   onPositionChange: (positionX: number, positionY: number) => void
 }): JSX.Element {
   const {
@@ -1733,7 +1800,7 @@ function TextOverlay({
     left:       `${positionX * 100}%`,
     top:        `${positionY * 100}%`,
     transform:  `translate(${translateX}, -50%)`,
-    fontSize:   `${fontSize * 0.056}vw`,
+    fontSize:   canvasHeight > 0 ? `${fontSize * (canvasHeight / 1080)}px` : `${fontSize * 0.056}vw`,
     fontFamily: fontFamily || 'Arial',
     color:      fontColor,
     fontWeight: bold   ? 'bold'   : 'normal',
@@ -1836,5 +1903,79 @@ function StepForwardIcon(): JSX.Element {
       <rect x="10.5" y="2" width="1.5" height="10" rx="0.5" />
       <path d="M2 2L8.5 7L2 12V2Z" />
     </svg>
+  )
+}
+
+// ── Timecode click-to-edit ─────────────────────────────────────────────────────
+
+function parseTimecodeInput(raw: string): number | null {
+  const s = raw.trim()
+  // Plain seconds
+  if (/^\d+(\.\d+)?$/.test(s)) return parseFloat(s)
+  // MM:SS or HH:MM:SS
+  const parts = s.split(':').map(Number)
+  if (parts.some(isNaN)) return null
+  if (parts.length === 2) return parts[0] * 60 + parts[1]
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2]
+  // HH:MM:SS:FF
+  if (parts.length === 4) return parts[0] * 3600 + parts[1] * 60 + parts[2] + parts[3] / 30
+  return null
+}
+
+function TimecodeEditor({
+  time, totalDuration, onSeek
+}: {
+  time: number
+  totalDuration: number
+  onSeek: (t: number) => void
+}): JSX.Element {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState('')
+
+  function startEdit() {
+    setValue(formatTimecode(time))
+    setEditing(true)
+  }
+
+  function commit() {
+    const parsed = parseTimecodeInput(value)
+    if (parsed !== null && isFinite(parsed)) {
+      onSeek(Math.max(0, Math.min(totalDuration, parsed)))
+    }
+    setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit()
+          if (e.key === 'Escape') setEditing(false)
+          e.stopPropagation()
+        }}
+        className="text-[11px] font-mono text-[var(--text-primary)] bg-transparent border-b border-[var(--accent)] outline-none w-[80px] select-all"
+        onClick={(e) => e.stopPropagation()}
+      />
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-1 cursor-text" onClick={startEdit} title="Click to edit timecode">
+      <span className="text-[11px] font-mono text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
+        {formatTimecode(time)}
+      </span>
+      {totalDuration > 0 && (
+        <>
+          <span className="text-[10px] text-[var(--text-muted)]">/</span>
+          <span className="text-[10px] font-mono text-[var(--text-muted)]">
+            {formatTimecode(totalDuration)}
+          </span>
+        </>
+      )}
+    </div>
   )
 }

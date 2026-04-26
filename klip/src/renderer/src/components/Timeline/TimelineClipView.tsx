@@ -1,7 +1,7 @@
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, useMotionValue, AnimatePresence, animate } from 'framer-motion'
-import { Volume2, Type, Zap, Palette, Crop, ArrowRightLeft, X, Unlink, Link2, Loader2 } from 'lucide-react'
+import { Volume2, Type, Zap, Palette, Crop, ArrowRightLeft, X, Unlink, Link2, Loader2, Pencil, Mic, Tag } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatDuration } from '@/lib/mediaUtils'
 import { useTimelineStore } from '@/stores/timelineStore'
@@ -65,7 +65,8 @@ export default function TimelineClipView({
     setTextSettings, setColorSettings, setCropSettings, setClipRole,
     addTransition, removeTransition,
     insertFreezeFrame,
-    snapEnabled
+    snapEnabled,
+    setClipLabelColor, renameClip, extractAudio
   } = useTimelineStore()
   const { clips: mediaClips, addClip: addMediaClip } = useMediaStore()
 
@@ -161,6 +162,36 @@ export default function TimelineClipView({
   const clipHeight = trackHeight - PADDING * 2
   const dispWidth  = clip.duration * pxPerSec
   const showLabel  = dispWidth >= MIN_LABEL
+
+  // ── Hover tooltip ────────────────────────────────────────────────────────────
+  const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null)
+  const tooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleMouseEnter = useCallback((e: React.MouseEvent) => {
+    tooltipTimerRef.current = setTimeout(() => {
+      setTooltip({ x: e.clientX, y: e.clientY })
+    }, 350)
+  }, [])
+
+  const handleMouseLeave = useCallback(() => {
+    if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current)
+    setTooltip(null)
+  }, [])
+
+  useEffect(() => () => {
+    if (tooltipTimerRef.current) clearTimeout(tooltipTimerRef.current)
+  }, [])
+
+  // ── Rename ───────────────────────────────────────────────────────────────────
+  const [isRenaming, setIsRenaming] = useState(false)
+  const [renameValue, setRenameValue] = useState(clip.name)
+
+  function commitRename() {
+    const name = renameValue.trim()
+    if (name && name !== clip.name) renameClip(clip.id, name)
+    else setRenameValue(clip.name)
+    setIsRenaming(false)
+  }
 
   // ── Context menu ─────────────────────────────────────────────────────────────
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
@@ -347,6 +378,8 @@ export default function TimelineClipView({
         exit={{ opacity: 0, scaleX: 0, originX: 0, transition: { duration: 0.16, ease: [0.4, 0, 1, 1] } }}
         transition={{ type: 'spring', stiffness: 400, damping: 32 }}
         onClick={(e) => e.stopPropagation()}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
         onContextMenu={(e) => {
           e.preventDefault()
           e.stopPropagation()
@@ -395,6 +428,14 @@ export default function TimelineClipView({
             className="absolute inset-x-0 top-0 h-px pointer-events-none"
             style={{ background: `${style.border}55` }}
           />
+
+          {/* Label color tint */}
+          {clip.labelColor && (
+            <div
+              className="absolute inset-0 pointer-events-none rounded"
+              style={{ background: clip.labelColor, opacity: 0.2 }}
+            />
+          )}
 
           {/* Waveform skeleton while audio is loading */}
           {waveformLoading && !peaks && (clip.type === 'audio' || clip.type === 'video') && dispWidth > 24 && (
@@ -490,8 +531,26 @@ export default function TimelineClipView({
             </div>
           )}
 
+          {/* Inline rename input */}
+          {isRenaming && (
+            <div className="absolute inset-0 flex items-center px-2 z-20" onClick={(e) => e.stopPropagation()}>
+              <input
+                autoFocus
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitRename()
+                  if (e.key === 'Escape') { setRenameValue(clip.name); setIsRenaming(false) }
+                  e.stopPropagation()
+                }}
+                className="w-full bg-[var(--bg-base)] border border-[var(--accent)] rounded px-1 text-[10px] text-[var(--text-primary)] focus:outline-none"
+              />
+            </div>
+          )}
+
           {/* Name + duration + badges */}
-          {showLabel && (
+          {showLabel && !isRenaming && (
             <div className="absolute inset-0 flex items-start justify-between px-1.5 pt-1 gap-1 pointer-events-none overflow-hidden">
               <span
                 className="text-[10px] font-semibold leading-tight truncate"
@@ -627,8 +686,23 @@ export default function TimelineClipView({
             onNormalize={(v) => setClipVolume(clip.id, v)}
             onRoleChange={(role) => setClipRole(clip.id, role)}
             onFreezeFrame={handleFreezeFrame}
+            onLabelColor={(c) => setClipLabelColor(clip.id, c)}
+            onRename={() => { setRenameValue(clip.name); setIsRenaming(true) }}
+            onExtractAudio={clip.type === 'video' ? () => extractAudio(clip.id) : undefined}
             mediaPath={mediaClip?.path ?? null}
             onClose={() => setCtxMenu(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── Hover tooltip ─────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {tooltip && (
+          <ClipTooltip
+            x={tooltip.x}
+            y={tooltip.y}
+            clip={clip}
+            mediaClip={mediaClip}
           />
         )}
       </AnimatePresence>
@@ -645,11 +719,24 @@ const SPEED_OPTIONS = [0.25, 0.5, 1, 1.5, 2, 4]
 /** Target integrated loudness for normalization (EBU R128 / YouTube standard). */
 const NORMALIZE_TARGET_LUFS = -18
 
+const LABEL_COLORS = [
+  { label: 'None',    color: undefined      },
+  { label: 'Red',     color: '#ef4444'      },
+  { label: 'Orange',  color: '#f97316'      },
+  { label: 'Yellow',  color: '#eab308'      },
+  { label: 'Green',   color: '#22c55e'      },
+  { label: 'Cyan',    color: '#22d3ee'      },
+  { label: 'Blue',    color: '#3b82f6'      },
+  { label: 'Purple',  color: '#a855f7'      }
+] as const
+
 function ClipContextMenu({
   x, y, clip, clips, transitions, playheadTime,
   onVolumeChange, onSpeedChange, onTextChange,
   onColorChange, onCropChange, onAddTransition, onRemoveTransition,
-  onUnlink, onFadeChange, onNormalize, onRoleChange, onFreezeFrame, mediaPath, onClose
+  onUnlink, onFadeChange, onNormalize, onRoleChange, onFreezeFrame,
+  onLabelColor, onRename, onExtractAudio,
+  mediaPath, onClose
 }: {
   x: number
   y: number
@@ -669,6 +756,9 @@ function ClipContextMenu({
   onNormalize: (volume: number) => void
   onRoleChange: (role: 'intro' | 'outro' | undefined) => void
   onFreezeFrame: (duration: number) => Promise<void>
+  onLabelColor: (color: string | undefined) => void
+  onRename: () => void
+  onExtractAudio?: () => void
   mediaPath: string | null
   onClose: () => void
 }): JSX.Element {
@@ -706,9 +796,11 @@ function ClipContextMenu({
   const existingFromTransition = transitions.find((t) => t.fromClipId === clip.id) ?? null
 
   const MENU_W  = 248
-  const MENU_MAX_H = 480
+  const MENU_MAX_H = 520
   const safeX = Math.min(x, window.innerWidth  - MENU_W - 8)
   const safeY = Math.min(y, window.innerHeight - MENU_MAX_H - 8)
+  const originX = x > window.innerWidth  / 2 ? 'right' : 'left'
+  const originY = y > window.innerHeight / 2 ? 'bottom' : 'top'
 
   useEffect(() => {
     function onDown(e: MouseEvent) {
@@ -767,10 +859,10 @@ function ClipContextMenu({
     <motion.div
       ref={menuRef}
       className="fixed z-[9999] rounded-xl border border-[var(--border)] bg-[var(--bg-overlay)] shadow-2xl overflow-hidden"
-      style={{ left: safeX, top: safeY, width: MENU_W, maxHeight: MENU_MAX_H, overflowY: 'auto' }}
-      initial={{ opacity: 0, scale: 0.94, y: -4 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.94, y: -4 }}
+      style={{ left: safeX, top: safeY, width: MENU_W, maxHeight: MENU_MAX_H, overflowY: 'auto', transformOrigin: `${originY} ${originX}` }}
+      initial={{ opacity: 0, scale: 0.94 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.94 }}
       transition={{ duration: 0.12, ease: 'easeOut' }}
     >
       {/* ── Volume (non-text clips) ───────────────────────────────────────── */}
@@ -1098,6 +1190,53 @@ function ClipContextMenu({
             )}
           </div>
         </MenuSection>
+      )}
+
+      {/* ── Rename ───────────────────────────────────────────────────────── */}
+      <div className="border-t border-[var(--border-subtle)] py-1">
+        <button
+          onClick={() => { onRename(); onClose() }}
+          className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-left text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] transition-colors duration-75"
+        >
+          <span className="opacity-70"><Pencil size={11} /></span>
+          Rename Clip
+        </button>
+      </div>
+
+      {/* ── Label Color ──────────────────────────────────────────────────── */}
+      <div className="border-t border-[var(--border-subtle)] px-3 py-2">
+        <p className="text-[9px] text-[var(--text-muted)] uppercase tracking-wide mb-1.5 flex items-center gap-1">
+          <Tag size={9} /> Label Color
+        </p>
+        <div className="flex gap-1.5 flex-wrap">
+          {LABEL_COLORS.map(({ label, color }) => (
+            <button
+              key={label}
+              title={label}
+              onClick={() => { onLabelColor(color); onClose() }}
+              className="w-5 h-5 rounded-full border-2 transition-transform hover:scale-110"
+              style={{
+                background: color ?? 'rgba(255,255,255,0.1)',
+                borderColor: clip.labelColor === color
+                  ? 'white'
+                  : color ? 'transparent' : 'rgba(255,255,255,0.2)'
+              }}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* ── Extract Audio ────────────────────────────────────────────────── */}
+      {onExtractAudio && (
+        <div className="border-t border-[var(--border-subtle)] py-1">
+          <button
+            onClick={() => { onExtractAudio(); onClose() }}
+            className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-left text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] transition-colors duration-75"
+          >
+            <span className="opacity-70"><Mic size={11} /></span>
+            Extract Audio to Extra Track
+          </button>
+        </div>
       )}
 
       {/* ── Unlink Audio ─────────────────────────────────────────────────── */}
@@ -1675,6 +1814,69 @@ function FadeHandle({
           {side === 'in' ? 'Fade in' : 'Fade out'} {fadeDuration.toFixed(1)}s
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Hover tooltip ──────────────────────────────────────────────────────────────
+
+function ClipTooltip({
+  x, y, clip, mediaClip
+}: {
+  x: number
+  y: number
+  clip: TimelineClip
+  mediaClip: import('@/types/media').MediaClip | null
+}): JSX.Element {
+  const TT_W = 220
+  const safeX = Math.min(x + 12, window.innerWidth  - TT_W - 8)
+  const safeY = Math.max(8, y - 120)
+
+  const effects: string[] = []
+  if ((clip.speed ?? 1) !== 1) effects.push(`${clip.speed}× speed`)
+  if (clip.colorSettings) effects.push('Color grade')
+  if (clip.cropSettings && clip.cropSettings.zoom > 1) effects.push(`${clip.cropSettings.zoom.toFixed(1)}× zoom`)
+  if ((clip.fadeIn ?? 0) > 0) effects.push(`Fade in ${clip.fadeIn?.toFixed(1)}s`)
+  if ((clip.fadeOut ?? 0) > 0) effects.push(`Fade out ${clip.fadeOut?.toFixed(1)}s`)
+
+  return createPortal(
+    <motion.div
+      className="fixed z-[9999] rounded-lg border border-[var(--border)] bg-[var(--bg-overlay)] shadow-2xl pointer-events-none overflow-hidden"
+      style={{ left: safeX, top: safeY, width: TT_W }}
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 4 }}
+      transition={{ duration: 0.08 }}
+    >
+      <div className="p-2.5 space-y-1.5">
+        <p className="text-[11px] font-semibold text-[var(--text-primary)] truncate">{clip.name}</p>
+        <div className="space-y-0.5">
+          <Row label="Duration" value={formatDuration(clip.duration)} />
+          {(clip.trimStart > 0) && <Row label="Trim in" value={`${clip.trimStart.toFixed(2)}s`} />}
+          {mediaClip && mediaClip.width > 0 && (
+            <Row label="Resolution" value={`${mediaClip.width}×${mediaClip.height}`} />
+          )}
+          <Row label="Track" value={clip.type} />
+        </div>
+        {effects.length > 0 && (
+          <div className="pt-1 border-t border-[var(--border-subtle)]">
+            <p className="text-[9px] text-[var(--text-muted)] uppercase tracking-wide mb-1">Effects</p>
+            {effects.map((e, i) => (
+              <p key={i} className="text-[10px] text-[var(--accent-light)]">· {e}</p>
+            ))}
+          </div>
+        )}
+      </div>
+    </motion.div>,
+    document.body
+  )
+}
+
+function Row({ label, value }: { label: string; value: string }): JSX.Element {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-[9px] text-[var(--text-muted)] shrink-0">{label}</span>
+      <span className="text-[10px] font-mono text-[var(--text-secondary)] truncate">{value}</span>
     </div>
   )
 }

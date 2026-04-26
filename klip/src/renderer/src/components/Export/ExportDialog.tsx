@@ -115,7 +115,7 @@ interface ExportDialogProps {
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function ExportDialog({ onClose }: ExportDialogProps): JSX.Element {
-  const { tracks, clips: timelineClips } = useTimelineStore()
+  const { tracks, clips: timelineClips, markers } = useTimelineStore()
   const { clips: mediaClips } = useMediaStore()
 
   // ── Settings state ──────────────────────────────────────────────────────────
@@ -129,6 +129,7 @@ export default function ExportDialog({ onClose }: ExportDialogProps): JSX.Elemen
   const [doneOutput, setDoneOutput]     = useState('')
   const [history, setHistory]           = useState<HistoryEntry[]>(loadHistory)
   const exportIdRef                     = useRef('')
+  const [embedChapters, setEmbedChapters] = useState(false)
 
   // Persist settings whenever they change
   useEffect(() => {
@@ -152,6 +153,16 @@ export default function ExportDialog({ onClose }: ExportDialogProps): JSX.Elemen
   const totalDuration = timelineClips.reduce(
     (max, c) => Math.max(max, c.startTime + c.duration), 0
   )
+
+  // Clips on the video track whose source file is flagged as missing
+  const missingVideoClips = videoClips.filter((c) => {
+    const mc = mediaClips.find((m) => m.id === c.mediaClipId)
+    return mc?.isMissing === true
+  })
+
+  // Markers with labels → potential YouTube chapters
+  const labeledMarkers = markers.filter((m) => m.label.trim().length > 0)
+  const hasChapters = labeledMarkers.length > 0
 
   const estimatedMB = Math.round(
     (totalDuration * (preset.width * preset.height * preset.fps * 0.07 / 1024 / 1024))
@@ -260,13 +271,16 @@ export default function ExportDialog({ onClose }: ExportDialogProps): JSX.Elemen
       mediaTypes,
       mediaColors,
       trackMutes: Object.fromEntries(tracks.map((t) => [t.id, t.isMuted])),
-      trackSolos: tracks.filter((t) => t.isSolo).map((t) => t.id)
+      trackSolos: tracks.filter((t) => t.isSolo).map((t) => t.id),
+      chapters: embedChapters && hasChapters
+        ? labeledMarkers.map((m) => ({ time: m.time, title: m.label }))
+        : undefined
     }
 
     setDialogState('exporting')
     setProgress(null)
     await window.api.export.start(job)
-  }, [outputPath, videoClips.length, mediaClips, tracks, timelineClips, totalDuration, preset, videoTrack])
+  }, [outputPath, videoClips.length, mediaClips, tracks, timelineClips, totalDuration, preset, videoTrack, embedChapters, hasChapters, labeledMarkers])
 
   // ── Cancel ──────────────────────────────────────────────────────────────────
   const handleCancel = useCallback(() => {
@@ -326,10 +340,16 @@ export default function ExportDialog({ onClose }: ExportDialogProps): JSX.Elemen
               onExport={handleExport}
               onClose={onClose}
               videoClipCount={videoClips.length}
+              missingVideoClipCount={missingVideoClips.length}
+              missingVideoClipNames={missingVideoClips.map((c) => c.name)}
               totalDuration={totalDuration}
               estimatedMB={estimatedMB}
               preset={preset}
               history={history}
+              hasChapters={hasChapters}
+              labeledMarkers={labeledMarkers}
+              embedChapters={embedChapters}
+              setEmbedChapters={setEmbedChapters}
             />
           )}
 
@@ -371,8 +391,10 @@ function IdleContent({
   presetId, setPresetId,
   outputFolder, fileName, setFileName, outputPath,
   onPickFolder, onExport, onClose,
-  videoClipCount, totalDuration, estimatedMB, preset,
-  history
+  videoClipCount, missingVideoClipCount, missingVideoClipNames,
+  totalDuration, estimatedMB, preset,
+  history,
+  hasChapters, labeledMarkers, embedChapters, setEmbedChapters
 }: {
   presetId: string
   setPresetId: (id: string) => void
@@ -384,12 +406,22 @@ function IdleContent({
   onExport: () => void
   onClose: () => void
   videoClipCount: number
+  missingVideoClipCount: number
+  missingVideoClipNames: string[]
   totalDuration: number
   estimatedMB: number
   preset: Preset
   history: HistoryEntry[]
+  hasChapters: boolean
+  labeledMarkers: import('@/types/timeline').TimelineMarker[]
+  embedChapters: boolean
+  setEmbedChapters: (v: boolean) => void
 }): JSX.Element {
-  const canExport = videoClipCount > 0 && outputFolder.length > 0 && fileName.trim().length > 0
+  const canExport =
+    videoClipCount > 0 &&
+    missingVideoClipCount === 0 &&
+    outputFolder.length > 0 &&
+    fileName.trim().length > 0
   const [showHistory, setShowHistory] = useState(false)
 
   return (
@@ -411,6 +443,25 @@ function IdleContent({
           <p className="text-xs text-[var(--text-muted)] bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
             No video clips on the timeline. Add clips before exporting.
           </p>
+        )}
+
+        {missingVideoClipCount > 0 && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2.5 space-y-1">
+            <p className="text-xs font-semibold text-red-400">
+              {missingVideoClipCount} missing source {missingVideoClipCount === 1 ? 'file' : 'files'} — export blocked
+            </p>
+            <ul className="space-y-0.5">
+              {missingVideoClipNames.slice(0, 5).map((name, i) => (
+                <li key={i} className="text-[10px] text-red-300/80 truncate">· {name}</li>
+              ))}
+              {missingVideoClipNames.length > 5 && (
+                <li className="text-[10px] text-red-300/60">
+                  … and {missingVideoClipNames.length - 5} more
+                </li>
+              )}
+            </ul>
+            <p className="text-[10px] text-red-300/60">Relink or remove these clips in the media bin.</p>
+          </div>
         )}
 
         {/* Preset selection */}
@@ -545,6 +596,33 @@ function IdleContent({
           </div>
         )}
       </div>
+
+      {/* YouTube chapters */}
+      {hasChapters && (
+        <div className="px-5 pb-3">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={embedChapters}
+              onChange={(e) => setEmbedChapters(e.target.checked)}
+              className="w-3.5 h-3.5 rounded accent-[var(--accent)] cursor-pointer"
+            />
+            <span className="text-xs text-[var(--text-secondary)]">Embed YouTube chapters</span>
+          </label>
+          {embedChapters && (
+            <div className="mt-2 space-y-0.5 pl-5">
+              {labeledMarkers.map((m, i) => (
+                <div key={m.id} className="flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
+                  <span className="font-mono w-16 shrink-0" style={{ color: m.color }}>
+                    {formatDuration(m.time)}
+                  </span>
+                  <span className="truncate">{m.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Footer */}
       <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-[var(--border-subtle)]">

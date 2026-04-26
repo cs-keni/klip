@@ -1,5 +1,5 @@
 import { spawn, ChildProcess } from 'child_process'
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
 
@@ -31,6 +31,11 @@ export interface CropSettingsExport {
   panY: number    // -1 to 1
 }
 
+export interface ExportChapter {
+  time: number    // seconds from start
+  title: string
+}
+
 export interface ExportJob {
   outputPath: string
   // Video settings
@@ -57,6 +62,8 @@ export interface ExportJob {
   // Track state
   trackMutes: Record<string, boolean>
   trackSolos: string[]
+  // Optional chapter markers (YouTube chapters)
+  chapters?: ExportChapter[]
 }
 
 export interface ExportClip {
@@ -516,11 +523,30 @@ export function buildFFmpegArgs(job: ExportJob): string[] {
     inputArgs.push(...inp.preArgs, '-i', inp.path)
   }
 
+  // ── Chapter metadata (YouTube chapters) ──────────────────────────────────
+  let chapterMetaPath: string | null = null
+  if (job.chapters && job.chapters.length > 0) {
+    const sorted = [...job.chapters].sort((a, b) => a.time - b.time)
+    const lines = [';FFMETADATA1']
+    for (let i = 0; i < sorted.length; i++) {
+      const start = Math.round(sorted[i].time * 1000)
+      const end   = i + 1 < sorted.length
+        ? Math.round(sorted[i + 1].time * 1000)
+        : Math.round(job.totalDuration * 1000)
+      lines.push('[CHAPTER]', 'TIMEBASE=1/1000', `START=${start}`, `END=${end}`, `title=${sorted[i].title}`)
+    }
+    chapterMetaPath = join(app.getPath('temp'), `klip-chapters-${Date.now()}.txt`)
+    writeFileSync(chapterMetaPath, lines.join('\n'), 'utf-8')
+    _pendingChapterMeta = chapterMetaPath
+  }
+
   return [
     ...inputArgs,
+    ...(chapterMetaPath ? ['-i', chapterMetaPath] : []),
     '-filter_complex', filterParts.join(';\n'),
     '-map', '[vout]',
     '-map', '[aout]',
+    ...(chapterMetaPath ? ['-map_metadata', String(inputs.length)] : []),
     '-c:v', 'libx264',
     '-crf', String(crf),
     '-preset', x264Preset,
@@ -534,6 +560,15 @@ export function buildFFmpegArgs(job: ExportJob): string[] {
   ]
 }
 
+let _pendingChapterMeta: string | null = null
+
+export function cleanupChapterMeta(): void {
+  if (_pendingChapterMeta) {
+    try { unlinkSync(_pendingChapterMeta) } catch { /* ignore */ }
+    _pendingChapterMeta = null
+  }
+}
+
 // ── Export runner ─────────────────────────────────────────────────────────────
 
 let activeProcess: ChildProcess | null = null
@@ -543,6 +578,7 @@ export function cancelExport(): void {
     activeProcess.kill('SIGTERM')
     activeProcess = null
   }
+  cleanupChapterMeta()
 }
 
 export function runExport(
@@ -587,6 +623,7 @@ export function runExport(
 
   proc.on('close', (code) => {
     activeProcess = null
+    cleanupChapterMeta()
     if (code === 0) {
       onDone(job.outputPath)
     } else {

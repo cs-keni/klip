@@ -436,6 +436,127 @@ Every interaction should feel responsive and alive — not flashy, just smooth a
 
 ---
 
+---
+
+## Phase 9 — Bug Fixes
+
+> Goal: Correct known logic and preview-accuracy bugs before they become user-facing pain.
+
+### Logic Bugs
+
+- [x] **`rippleDeleteSelected` leaves gaps when multiple clips are on the same track**
+  - **Root cause:** The loop iterates over `toDelete` using each clip's original `startTime` from before the loop. After the first clip is deleted and subsequent clips shift left, later iterations compute `gapEnd = del.startTime + del.duration` using the *original* startTime — not the *current* (post-shift) startTime. Clips that should shift don't, leaving gaps between non-selected clips.
+  - **Fix (`timelineStore.ts` `rippleDeleteSelected`):** Inside each loop iteration, look up `del`'s current `startTime` from the live `clips` array (find by `del.id`) before computing `gapEnd`. This ensures every iteration uses the actual post-shift position.
+
+- [x] **`insertFreezeFrame` unlinks the left video and left audio from each other**
+  - **Root cause:** After the freeze frame split, `leftVideo.linkedClipId = undefined` and `leftAudio.linkedClipId = undefined`. Only the right halves are re-linked; the left halves become two orphan clips.
+  - **Fix (`timelineStore.ts` `insertFreezeFrame`):** Set `leftVideo.linkedClipId = linkedAudio.id` and `leftAudio.linkedClipId = src.id`. Both left halves must remain linked to each other, mirroring how the right halves are linked.
+
+- [x] **`pasteClips` drops video + audio link when pasting a linked pair**
+  - **Root cause:** All pasted clips get `linkedClipId: undefined` to avoid dangling refs. Pasting a linked video+audio pair produces two unlinked orphan clips.
+  - **Fix (`timelineStore.ts` `pasteClips`):** Build an `idMap` (old ID → new `crypto.randomUUID()`) before mapping. When setting `linkedClipId` on a pasted clip, if the original `linkedClipId` is in `idMap`, use the mapped new ID. This re-wires linked pairs while still dropping links to clips not in the paste batch.
+
+- [x] **`closeGap` doesn't shift linked audio when closing a video track gap**
+  - **Root cause:** `closeGap` only shifts clips on the same `trackId`. A video clip linked to an audio clip on `a1` falls out of sync when the gap is closed on `v1`.
+  - **Fix (`timelineStore.ts` `closeGap`):** After identifying clips to shift on `trackId`, also shift their `linkedClipId` counterparts on other tracks by the same `gapSize`.
+
+- [x] **Export silently replaces missing-source clips with black gaps**
+  - **Root cause:** In `buildFFmpegArgs`, when `job.mediaPaths[clip.mediaClipId]` is undefined, the clip falls through to `pushGap(clip.duration)` with no warning. The exported video has silent black holes instead of the expected content.
+  - **Fix (`ExportDialog.tsx`):** Add a pre-flight check before calling `runExport`. Scan all clips for undefined paths and show a blocking warning modal listing the affected clips (name + track). The user must acknowledge or relink before export proceeds.
+
+### Preview Accuracy Bugs
+
+- [x] **Text overlay font size mismatches export — preview uses `vw`, export uses frame height**
+  - **Root cause:** `TextOverlay` in `PreviewPanel.tsx` renders with `` fontSize: `${fontSize * 0.056}vw` `` (relative to viewport width). The FFmpeg export uses `Math.round(ts.fontSize * height / 1080)` (relative to output frame height). On a typical dual-panel layout these produce visually different sizes — the preview cannot be trusted as WYSIWYG.
+  - **Fix (`PreviewPanel.tsx` `TextOverlay`):** Add a `canvasHeight` prop, measured via `ResizeObserver` on the canvas `div` ref (or `getBoundingClientRect` on each render). Render font size as `` `${fontSize * (canvasHeight / 1080)}px` ``. This exactly mirrors the FFmpeg formula and makes text size accurate in preview.
+
+- [x] **Audio fade envelopes (fade-in / fade-out) are not applied during live playback**
+  - **Root cause:** `fadeIn`/`fadeOut` values drive `afade` FFmpeg filters at export, but the preview player's `<video>` and `<audio>` elements receive no volume ramping. Users can't audition their fade choices.
+  - **Fix (`PreviewPanel.tsx` playback engine):** When starting clip playback, schedule `GainNode.gain.linearRampToValueAtTime` calls on the existing `audioCtxRef` Web Audio graph: ramp 0 → clipVolume over `fadeIn` seconds at clip start, and clipVolume → 0 over `fadeOut` seconds ending at clip end. Route both the `<video>` and `<audio>` element sources through this gain node.
+
+---
+
+## Phase 10 — Seamless & Modern UX
+
+> Goal: Close the gap between "functional" and "feels like a real product." Every session should feel fast, discoverable, and satisfying.
+
+### Interaction & Navigation
+
+- [x] **Timeline lasso (drag-select) for multi-clip selection**
+  - Drag on empty track area to draw a selection rectangle; any clip whose bounding box intersects is added to the selection. Much faster than Ctrl+clicking individual clips.
+  - Visual: translucent accent-colored rectangle that follows the cursor. Clips briefly illuminate as they enter the selection boundary.
+  - Start drag on an empty track row region only (not on an existing clip). `pointerdown` on empty space → track drag delta → compute intersecting clips on `pointerup`.
+
+- [x] **Timecode click-to-edit — type a time to jump the playhead**
+  - Click the timecode display in the preview panel transport row to enter edit mode. Renders as a `<input type="text">` with mono font, same size as the timecode label, auto-selected on click.
+  - Parse HH:MM:SS:FF, HH:MM:SS, or plain seconds. Enter confirms and seeks; Escape cancels and restores. Invalid input reverts silently.
+
+- [x] **Timeline clip hover tooltip — rich info on hover**
+  - Hovering a clip for 350ms shows a floating popover (above the clip, positioned left or right depending on screen edge): source file name, output duration, trim region (in → out), resolution + codec (video), and active effects (speed, color grade, zoom, fades).
+  - Implemented as a portal-rendered `div` positioned to the clip's bounding rect. Framer Motion fade-in (80ms). Dismisses immediately on pointer leave.
+
+- [x] **Audio scrubbing — brief audio feedback when dragging the playhead**
+  - While actively dragging the timeline playhead (pointer captured on ruler), play a ≈80ms audio window at the current scrub position at 1× speed. Throttle to one fire per 60ms.
+  - Implement via `AudioContext.decodeAudioData` + `AudioBufferSourceNode`. Decode only once per source clip; cache the buffer. Stop the previous buffer source before starting the next.
+
+- [x] **Add / remove tracks — dynamic track count**
+  - "+" button in the track headers panel to add a track. Opens a small picker: Video, Audio, Music.
+  - Right-click a track header → "Remove Track" — only enabled when the track is empty and not a system track (`v1`, `a1`, `m1`).
+  - New tracks join the store's `tracks` array and persist in the project JSON. `DEFAULT_TRACKS` stays the same; additions are user-created.
+
+### Organization & Editing
+
+- [x] **Clip color labels** *(promoted from Could Have)*
+  - Right-click any clip → "Label Color" → inline color picker with 8 swatches: gray (default), red, orange, yellow, green, cyan, blue, purple.
+  - Stored as `TimelineClip.labelColor?: string`. Applied as a subtle overlay tint (20% opacity) on the clip body, visible at all zoom levels.
+  - Persisted in project JSON. No effect on export.
+
+- [x] **Timeline minimap**
+  - A slim (22px tall) full-width bar above the ruler, spanning from time 0 to `totalDuration`.
+  - Renders all clips as tiny colored blocks at proportional positions (same colors as `CLIP_STYLE`).
+  - A translucent viewport window shows the currently visible time range. Drag it or click anywhere to scroll.
+  - Critical for navigating 8-hour OBS recordings where the visible timeline window is a tiny fraction of the content.
+
+- [x] **Clip "Rename" via timeline context menu**
+  - Right-click a timeline clip → "Rename" — shows an inline text input overlay on the clip label. Enter / click-outside saves. Escape cancels.
+  - Renames only the timeline clip instance (`clip.name`), not the source media bin clip.
+
+- [x] **"Extract Audio" on video clips**
+  - Right-click a video clip → "Extract Audio to Extra Track" — creates a standalone audio clip on `a2` from the same source, at the same `startTime` / `trimStart` / `duration`. Unlinks the original video+audio pair so the extracted audio can be independently trimmed.
+  - Useful for layering multiple mixes or pulling a specific vocal take separately from gameplay.
+
+- [x] **Ripple-insert paste — Ctrl+Shift+V**
+  - Paste clips at the playhead AND ripple all later clips on every track rightward by the total pasted duration, making room.
+  - Distinct from Ctrl+V (which overlays without shifting anything).
+
+### Export & Output
+
+- [x] **YouTube chapter metadata export**
+  - If any `TimelineMarker` entries have non-empty `label` strings, offer a checkbox in `ExportDialog`: "Embed chapters in MP4."
+  - At export, pass chapter metadata via FFmpeg `-metadata:s:v` or a `-map_chapters` side file. YouTube reads these and auto-creates the chapter list.
+  - Show a preview table of (timestamp, label) in the dialog before the user starts export.
+
+### Animations & Feel
+
+- [x] **Context menu opens from the click point, not top-left**
+  - The menu's Framer Motion `scale: 0.94 → 1` animation always expands from the implicit `transform-origin: top left`, which looks wrong when the menu is repositioned to avoid screen edges.
+  - Fix: compute `transformOrigin` from the quadrant of the click relative to the screen (`top-left` / `top-right` / `bottom-left` / `bottom-right`) and pass it to the motion `div`'s `style` prop. The animation will then expand from the click origin.
+
+- [x] **Scrub bar — draggable playhead thumb, not just click-seek**
+  - Currently the preview scrub bar handles `onClick` + `onMouseMove`. There's no `pointerdown` → capture → continuous `pointermove` loop for true drag-scrub.
+  - Fix: replace with a `onPointerDown` handler that captures the pointer and calls `seekTo` on every `pointermove`. The thumb pill should scale up (1 → 1.4) during drag via Framer Motion `whileDrag`.
+
+- [x] **Marker color picker**
+  - Double-clicking a marker already opens a label editor. Add a row of 6 color swatches (amber default, red, green, cyan, purple, white) alongside the label input.
+  - Stored in `TimelineMarker.color` (already modeled as a hex string — just unused beyond the default `'#f59e0b'`).
+
+- [x] **Track header collapse — fold a track to minimal height**
+  - Click the track type icon (or a small chevron) in the track header to collapse the track to 18px, showing only the name and mute/lock icons.
+  - Expand on another click. Animate with Framer Motion `layout` so sibling tracks slide smoothly into the new position.
+  - Stored in `Track.isCollapsed?: boolean`. Not persisted (resets on project open).
+
+---
+
 ## Phase Order Summary
 
 | Phase | Focus | Dependency |
@@ -448,3 +569,5 @@ Every interaction should feel responsive and alive — not flashy, just smooth a
 | 6 | Effects & Overlays | Phase 4 + 5 |
 | 7 | Export | Phase 3 + 5 + 6 |
 | 8 | Tutorial, Polish & Settings | All phases |
+| 9 | Bug Fixes | All phases |
+| 10 | Seamless & Modern UX | Phase 9 |

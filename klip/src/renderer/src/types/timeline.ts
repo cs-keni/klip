@@ -16,6 +16,7 @@ export interface Track {
   isLocked: boolean
   isMuted: boolean
   isSolo: boolean
+  isCollapsed?: boolean
 }
 
 // ── Phase 6 settings types ─────────────────────────────────────────────────────
@@ -99,6 +100,8 @@ export interface TimelineClip {
   colorSettings?: ColorSettings
   /** Digital zoom & pan (video, image clips). */
   cropSettings?: CropSettings
+  /** Label colour tint on the timeline clip body (cosmetic only, not exported). */
+  labelColor?: string
 }
 
 export interface HistoryEntry {

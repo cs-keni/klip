@@ -1,11 +1,11 @@
 import { useState, useRef, useCallback, useEffect, useMemo, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Lock, Unlock, Volume2, VolumeX, Pencil, ArrowLeftRight } from 'lucide-react'
+import { Lock, Unlock, Volume2, VolumeX, Pencil, ArrowLeftRight, ChevronRight, Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTimelineStore } from '@/stores/timelineStore'
 import { useMediaStore } from '@/stores/mediaStore'
-import { TRACK_HEIGHT, HEADER_WIDTH, type Track, type TimelineClip } from '@/types/timeline'
+import { TRACK_HEIGHT, HEADER_WIDTH, type Track, type TimelineClip, type TrackType } from '@/types/timeline'
 import type { MediaClip } from '@/types/media'
 import TimelineClipView from './TimelineClipView'
 
@@ -53,7 +53,8 @@ export default function TrackRow({
   const {
     tracks, addClip, addClips, selectClip, renameTrack,
     toggleMute, toggleSolo, toggleLock,
-    snapEnabled, closeGap
+    snapEnabled, closeGap,
+    toggleTrackCollapse, removeTrack
   } = useTimelineStore()
   const { clips: mediaClips, addClip: addMediaClip } = useMediaStore()
 
@@ -65,8 +66,11 @@ export default function TrackRow({
   const dragCounterRef = useRef(0)
   const laneRef = useRef<HTMLDivElement>(null)
 
-  const height = TRACK_HEIGHT[track.type]
+  const isCollapsed = track.isCollapsed ?? false
+  const height = isCollapsed ? 18 : TRACK_HEIGHT[track.type]
   const accent = TRACK_ACCENT[track.type]
+  const isSystem = ['v1', 'a1', 'a2', 'm1', 'overlay1'].includes(track.id)
+  const canRemove = !isSystem && clips.length === 0
 
   // ── Gap detection ──────────────────────────────────────────────────────────
 
@@ -271,9 +275,12 @@ export default function TrackRow({
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div
-      className="flex border-b border-[var(--border-subtle)] group/track"
-      style={{ height, minWidth: contentWidth + HEADER_WIDTH }}
+    <motion.div
+      layout
+      className="flex border-b border-[var(--border-subtle)] group/track overflow-hidden"
+      style={{ minWidth: contentWidth + HEADER_WIDTH }}
+      animate={{ height }}
+      transition={{ type: 'spring', stiffness: 500, damping: 40 }}
     >
       {/* ── Track header (sticky) ───────────────────────────────────────── */}
       <div
@@ -287,6 +294,17 @@ export default function TrackRow({
           setContextMenu({ x: e.clientX, y: e.clientY })
         }}
       >
+        {/* Collapse chevron */}
+        <button
+          onClick={() => toggleTrackCollapse(track.id)}
+          className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors duration-75"
+          title={isCollapsed ? 'Expand track' : 'Collapse track'}
+        >
+          <motion.div animate={{ rotate: isCollapsed ? 0 : 90 }} transition={{ duration: 0.15 }}>
+            <ChevronRight size={10} />
+          </motion.div>
+        </button>
+
         {/* Colour dot */}
         <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: accent }} />
 
@@ -341,10 +359,15 @@ export default function TrackRow({
           <TrackContextMenu
             x={contextMenu.x}
             y={contextMenu.y}
+            canRemove={canRemove}
             onClose={() => setContextMenu(null)}
             onRename={() => {
               setRenameValue(track.name)
               setIsRenaming(true)
+              setContextMenu(null)
+            }}
+            onRemove={() => {
+              removeTrack(track.id)
               setContextMenu(null)
             }}
           />
@@ -440,7 +463,7 @@ export default function TrackRow({
           ))}
         </AnimatePresence>
       </div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -449,19 +472,26 @@ export default function TrackRow({
 function TrackContextMenu({
   x,
   y,
+  canRemove,
   onClose,
-  onRename
+  onRename,
+  onRemove
 }: {
   x: number
   y: number
+  canRemove: boolean
   onClose: () => void
   onRename: () => void
+  onRemove: () => void
 }): JSX.Element {
   const menuRef = useRef<HTMLDivElement>(null)
-  const MENU_W = 160
-  const MENU_H = 44
+  const MENU_W = 180
+  const MENU_H = canRemove ? 76 : 44
   const clampedX = Math.min(x, window.innerWidth - MENU_W - 8)
   const clampedY = Math.min(y, window.innerHeight - MENU_H - 8)
+  const originX  = x > window.innerWidth  / 2 ? 'right' : 'left'
+  const originY  = y > window.innerHeight / 2 ? 'bottom' : 'top'
+  const transformOrigin = `${originY} ${originX}`
 
   useEffect(() => {
     function onDown(e: MouseEvent) {
@@ -481,11 +511,11 @@ function TrackContextMenu({
   return createPortal(
     <motion.div
       ref={menuRef}
-      className="fixed z-[9999] min-w-[160px] rounded-lg overflow-hidden border border-[var(--border)] bg-[var(--bg-overlay)] shadow-xl"
-      style={{ left: clampedX, top: clampedY }}
-      initial={{ opacity: 0, scale: 0.94, y: -4 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.94, y: -4 }}
+      className="fixed z-[9999] min-w-[180px] rounded-lg overflow-hidden border border-[var(--border)] bg-[var(--bg-overlay)] shadow-xl"
+      style={{ left: clampedX, top: clampedY, transformOrigin }}
+      initial={{ opacity: 0, scale: 0.94 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.94 }}
       transition={{ duration: 0.1, ease: 'easeOut' }}
     >
       <div className="py-1">
@@ -496,6 +526,15 @@ function TrackContextMenu({
           <span className="opacity-70"><Pencil size={13} /></span>
           Rename
         </button>
+        {canRemove && (
+          <button
+            onClick={onRemove}
+            className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs font-medium text-left text-red-400 hover:bg-[var(--bg-elevated)] hover:text-red-300 transition-colors duration-75"
+          >
+            <span className="opacity-70"><Trash2 size={13} /></span>
+            Remove Track
+          </button>
+        )}
       </div>
     </motion.div>,
     document.body
@@ -520,6 +559,8 @@ function GapContextMenu({
   const MENU_H = 44
   const clampedX = Math.min(x, window.innerWidth - MENU_W - 8)
   const clampedY = Math.min(y, window.innerHeight - MENU_H - 8)
+  const originX  = x > window.innerWidth  / 2 ? 'right' : 'left'
+  const originY  = y > window.innerHeight / 2 ? 'bottom' : 'top'
 
   useEffect(() => {
     function onDown(e: MouseEvent) {
@@ -540,10 +581,10 @@ function GapContextMenu({
     <motion.div
       ref={menuRef}
       className="fixed z-[9999] min-w-[160px] rounded-lg overflow-hidden border border-[var(--border)] bg-[var(--bg-overlay)] shadow-xl"
-      style={{ left: clampedX, top: clampedY }}
-      initial={{ opacity: 0, scale: 0.94, y: -4 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.94, y: -4 }}
+      style={{ left: clampedX, top: clampedY, transformOrigin: `${originY} ${originX}` }}
+      initial={{ opacity: 0, scale: 0.94 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.94 }}
       transition={{ duration: 0.1, ease: 'easeOut' }}
     >
       <div className="py-1">

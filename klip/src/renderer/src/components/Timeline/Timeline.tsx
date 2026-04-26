@@ -1,12 +1,14 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Minus, Plus, Maximize2, Undo2, Redo2, Magnet, Repeat, Timer } from 'lucide-react'
+import { Minus, Plus, Maximize2, Undo2, Redo2, Magnet, Repeat, Timer, Film, Music, Mic } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatTimecode } from '@/lib/mediaUtils'
 import { useTimelineStore } from '@/stores/timelineStore'
 import { useCommandPaletteStore } from '@/stores/commandPaletteStore'
+import { useMediaStore } from '@/stores/mediaStore'
 import { toast } from '@/stores/toastStore'
 import { HEADER_WIDTH, TRACK_HEIGHT } from '@/types/timeline'
+import type { TrackType } from '@/types/timeline'
 import { subscribeSnapTime } from '@/lib/snapIndicator'
 import { markRipple } from '@/lib/rippleSignal'
 import { flashCopy } from '@/lib/copyFlash'
@@ -35,17 +37,38 @@ export default function Timeline(): JSX.Element {
     selectClip,
     splitClip,
     rippleDelete, rippleDeleteSelected,
-    copySelectedClips, pasteClips,
+    copySelectedClips, pasteClips, pasteClipsWithRipple,
     trimToPlayhead,
     undo, redo,
-    markers, addMarker, removeMarker, updateMarkerLabel
+    markers, addMarker, removeMarker, updateMarkerLabel,
+    addTrack, selectClip: selectClipStore
   } = useTimelineStore()
+  const { clips: mediaClips } = useMediaStore()
 
   const scrollRef = useRef<HTMLDivElement>(null)
+  const minimapRef = useRef<HTMLDivElement>(null)
   const [scrollLeft, setScrollLeft] = useState(0)
   const [containerWidth, setContainerWidth] = useState(800)
   const [isScrubbing, setIsScrubbing] = useState(false)
   const [rulerFormat, setRulerFormat] = useState<'seconds' | 'timecode'>('seconds')
+
+  // ── Lasso selection state ─────────────────────────────────────────────────
+  const [lasso, setLasso] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+  const lassoStartRef = useRef<{ x: number; y: number; scrollLeft: number } | null>(null)
+
+  // ── Audio scrub ────────────────────────────────────────────────────────────
+  const scrubCtxRef = useRef<AudioContext | null>(null)
+  const scrubBufferCache = useRef<Map<string, AudioBuffer>>(new Map())
+  const scrubSourceRef = useRef<AudioBufferSourceNode | null>(null)
+  const lastScrubRef = useRef(0)
+  const [showAddTrack, setShowAddTrack] = useState(false)
+
+  useEffect(() => {
+    if (!showAddTrack) return
+    function onDown() { setShowAddTrack(false) }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [showAddTrack])
 
   // ── Smooth zoom animation ─────────────────────────────────────────────────
   // displayPxPerSec lerps toward the store's pxPerSec (the target) each rAF.
@@ -288,6 +311,9 @@ export default function Timeline(): JSX.Element {
       if ((e.ctrlKey || e.metaKey) && e.key === 'v' && !e.shiftKey) {
         e.preventDefault(); pasteClips(); return
       }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'V' && e.shiftKey) {
+        e.preventDefault(); pasteClipsWithRipple(); return
+      }
 
       // ── Editing ────────────────────────────────────────────────────────
       if (e.key === '\\' && !e.ctrlKey && !e.metaKey) {
@@ -379,7 +405,7 @@ export default function Timeline(): JSX.Element {
     selectedClipId, selectedClipIds,
     removeClip, removeSelectedClips,
     splitClip, rippleDelete, rippleDeleteSelected,
-    copySelectedClips, pasteClips,
+    copySelectedClips, pasteClips, pasteClipsWithRipple,
     trimToPlayhead, toggleSnap,
     loopIn, loopOut, loopEnabled,
     setLoopIn, setLoopOut, toggleLoop, clearLoop,
@@ -389,13 +415,135 @@ export default function Timeline(): JSX.Element {
   // ── Deselect when clicking empty space ───────────────────────────────────
 
   const handleContainerClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) selectClip(null)
+    if (e.target === e.currentTarget) selectClipStore(null)
+  }
+
+  // ── Lasso selection ───────────────────────────────────────────────────────
+
+  function handleLassoPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    // Only start on left-button clicks on the content area itself (not on clips)
+    if (e.button !== 0) return
+    const target = e.target as HTMLElement
+    if (target.closest('[data-clip-id]') || target.closest('[data-track]')) return
+    // Don't start lasso on ruler
+    const rect = scrollRef.current!.getBoundingClientRect()
+    const relY = e.clientY - rect.top
+    if (relY < RULER_HEIGHT) return
+
+    lassoStartRef.current = {
+      x: e.clientX - rect.left + scrollRef.current!.scrollLeft,
+      y: e.clientY - rect.top  + scrollRef.current!.scrollTop,
+      scrollLeft: scrollRef.current!.scrollLeft
+    }
+
+    const onMove = (ev: PointerEvent) => {
+      if (!lassoStartRef.current) return
+      const curX = ev.clientX - rect.left + scrollRef.current!.scrollLeft
+      const curY = ev.clientY - rect.top  + scrollRef.current!.scrollTop
+      setLasso({
+        x1: Math.min(lassoStartRef.current.x, curX),
+        y1: Math.min(lassoStartRef.current.y, curY),
+        x2: Math.max(lassoStartRef.current.x, curX),
+        y2: Math.max(lassoStartRef.current.y, curY)
+      })
+    }
+
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      if (!lassoStartRef.current) { setLasso(null); return }
+
+      const curX = ev.clientX - rect.left + scrollRef.current!.scrollLeft
+      const curY = ev.clientY - rect.top  + scrollRef.current!.scrollTop
+      const lx1 = Math.min(lassoStartRef.current.x, curX)
+      const lx2 = Math.max(lassoStartRef.current.x, curX)
+      const ly1 = Math.min(lassoStartRef.current.y, curY)
+      const ly2 = Math.max(lassoStartRef.current.y, curY)
+
+      if (lx2 - lx1 > 4 && ly2 - ly1 > 4) {
+        // Compute which clips intersect
+        let trackTop = RULER_HEIGHT
+        const selected: string[] = []
+        for (const track of tracks) {
+          const h = track.isCollapsed ? 18 : TRACK_HEIGHT[track.type]
+          const trackBottom = trackTop + h
+          const trackClips = clips.filter((c) => c.trackId === track.id)
+          for (const clip of trackClips) {
+            const clipLeft  = HEADER_WIDTH + clip.startTime * displayPxPerSecRef.current
+            const clipRight = HEADER_WIDTH + (clip.startTime + clip.duration) * displayPxPerSecRef.current
+            if (clipLeft < lx2 && clipRight > lx1 && trackTop < ly2 && trackBottom > ly1) {
+              selected.push(clip.id)
+            }
+          }
+          trackTop = trackBottom
+        }
+        if (selected.length > 0) {
+          useTimelineStore.setState({
+            selectedClipIds: selected,
+            selectedClipId: selected[0]
+          })
+        }
+      }
+      lassoStartRef.current = null
+      setLasso(null)
+    }
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
+  // ── Audio scrubbing ───────────────────────────────────────────────────────
+
+  async function playScrubSlice(time: number) {
+    const now = Date.now()
+    if (now - lastScrubRef.current < 60) return
+    lastScrubRef.current = now
+
+    const ctx = scrubCtxRef.current ?? (() => {
+      const c = new AudioContext()
+      scrubCtxRef.current = c
+      return c
+    })()
+
+    // Find an audio or video clip at this time
+    const audioClip = clips.find((c) =>
+      (c.type === 'audio' || c.type === 'video') &&
+      c.startTime <= time && c.startTime + c.duration >= time
+    )
+    if (!audioClip) return
+    const mc = mediaClips.find((m) => m.id === audioClip.mediaClipId)
+    if (!mc?.path) return
+
+    const path = mc.path
+
+    if (!scrubBufferCache.current.has(path)) {
+      try {
+        const { pathToFileUrl } = await import('@/lib/mediaUtils')
+        const resp = await fetch(pathToFileUrl(path))
+        const ab = await resp.arrayBuffer()
+        const buffer = await ctx.decodeAudioData(ab)
+        scrubBufferCache.current.set(path, buffer)
+      } catch { return }
+    }
+
+    const buffer = scrubBufferCache.current.get(path)!
+    if (scrubSourceRef.current) {
+      try { scrubSourceRef.current.stop() } catch { /* already stopped */ }
+    }
+
+    const src = ctx.createBufferSource()
+    src.buffer = buffer
+    src.connect(ctx.destination)
+    const offsetInMedia = audioClip.trimStart + (time - audioClip.startTime) * (audioClip.speed ?? 1)
+    const safeOffset = Math.max(0, Math.min(offsetInMedia, buffer.duration - 0.08))
+    src.start(0, safeOffset, 0.08)
+    scrubSourceRef.current = src
   }
 
   // ── Geometry ──────────────────────────────────────────────────────────────
 
   const playheadPx       = HEADER_WIDTH + playheadTime * displayPxPerSec
-  const totalTrackHeight = tracks.reduce((h, t) => h + TRACK_HEIGHT[t.type], 0)
+  const totalTrackHeight = tracks.reduce((h, t) => h + (t.isCollapsed ? 18 : TRACK_HEIGHT[t.type]), 0)
 
   return (
     <div className="flex flex-col h-full bg-[var(--bg-base)]">
@@ -459,12 +607,25 @@ export default function Timeline(): JSX.Element {
         </span>
       </div>
 
+      {/* ── Minimap ──────────────────────────────────────────────────────── */}
+      <TimelineMinimap
+        clips={clips}
+        tracks={tracks}
+        totalDuration={totalDuration}
+        scrollLeft={scrollLeft}
+        containerWidth={containerWidth - HEADER_WIDTH}
+        pxPerSec={displayPxPerSec}
+        contentWidth={contentWidth}
+        onScrollTo={(sl) => { if (scrollRef.current) scrollRef.current.scrollLeft = sl }}
+      />
+
       {/* ── Scrollable timeline body ──────────────────────────────────────── */}
       <div
         ref={scrollRef}
         className="flex-1 min-h-0 overflow-auto relative"
         onScroll={handleScroll}
         onClick={handleContainerClick}
+        onPointerDown={handleLassoPointerDown}
       >
         <div style={{ minWidth: HEADER_WIDTH + contentWidth }}>
           {/* ── Ruler ──────────────────────────────────────────────────── */}
@@ -481,12 +642,13 @@ export default function Timeline(): JSX.Element {
               totalDuration={totalDuration}
               playheadTime={playheadTime}
               scrollLeft={scrollLeft}
-              onScrub={setPlayheadTime}
+              onScrub={(t) => { setPlayheadTime(t); playScrubSlice(t) }}
               onScrubStart={() => { setIsPlaying(false); setIsScrubbing(true) }}
               onScrubEnd={() => setIsScrubbing(false)}
               markers={markers}
               onRemoveMarker={removeMarker}
               onUpdateMarkerLabel={updateMarkerLabel}
+              onUpdateMarkerColor={(id, color) => useTimelineStore.getState().updateMarkerColor(id, color)}
               format={rulerFormat}
             />
           </div>
@@ -514,7 +676,71 @@ export default function Timeline(): JSX.Element {
               </p>
             </div>
           )}
+
+          {/* ── Add Track row ───────────────────────────────────────────── */}
+          <div
+            className="flex items-center border-b border-[var(--border-subtle)]"
+            style={{ height: 28, minWidth: HEADER_WIDTH + contentWidth }}
+          >
+            <div
+              className="shrink-0 flex items-center px-2 gap-1 z-10 bg-[var(--bg-surface)]"
+              style={{ width: HEADER_WIDTH, position: 'sticky', left: 0 }}
+            >
+              <div className="relative">
+                <button
+                  onClick={() => setShowAddTrack((v) => !v)}
+                  title="Add track"
+                  className="flex items-center gap-1 text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-light)] transition-colors duration-75"
+                >
+                  <Plus size={11} />
+                  <span>Add Track</span>
+                </button>
+                <AnimatePresence>
+                  {showAddTrack && (
+                    <motion.div
+                      className="absolute bottom-full mb-1 left-0 z-[9999] rounded-lg overflow-hidden border border-[var(--border)] bg-[var(--bg-overlay)] shadow-xl min-w-[140px]"
+                      initial={{ opacity: 0, scale: 0.94, y: 4 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.94, y: 4 }}
+                      transition={{ duration: 0.1, ease: 'easeOut' }}
+                    >
+                      {([
+                        { type: 'video' as TrackType, label: 'Video', icon: <Film size={11} /> },
+                        { type: 'audio' as TrackType, label: 'Audio', icon: <Mic size={11} /> },
+                        { type: 'music' as TrackType, label: 'Music', icon: <Music size={11} /> }
+                      ]).map(({ type, label, icon }) => (
+                        <button
+                          key={type}
+                          onClick={() => { addTrack(type); setShowAddTrack(false) }}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] transition-colors duration-75"
+                        >
+                          <span className="opacity-70">{icon}</span>
+                          {label}
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+          </div>
         </div>
+
+        {/* ── Lasso selection rect ─────────────────────────────────────────── */}
+        {lasso && (
+          <div
+            className="absolute pointer-events-none z-40"
+            style={{
+              left:   lasso.x1 - (scrollRef.current?.scrollLeft ?? 0),
+              top:    lasso.y1 - (scrollRef.current?.scrollTop ?? 0),
+              width:  lasso.x2 - lasso.x1,
+              height: lasso.y2 - lasso.y1,
+              background: 'rgba(139,92,246,0.12)',
+              border: '1px solid rgba(139,92,246,0.6)',
+              borderRadius: 3
+            }}
+          />
+        )}
 
         {/* ── Loop region overlay ─────────────────────────────────────────── */}
         {loopIn !== null && loopOut !== null && loopOut > loopIn && (
@@ -608,5 +834,101 @@ function ToolbarButton({
     >
       {icon}
     </button>
+  )
+}
+
+// ── Timeline Minimap ────────────────────────────────────────────────────────
+
+const CLIP_MINI_COLOR: Record<string, string> = {
+  video:   '#a78bfa',
+  audio:   '#60a5fa',
+  image:   '#22d3ee',
+  color:   '#71717a',
+  music:   '#4ade80',
+  text:    '#22d3ee'
+}
+
+function TimelineMinimap({
+  clips, tracks, totalDuration, scrollLeft, containerWidth, pxPerSec, contentWidth, onScrollTo
+}: {
+  clips: import('@/types/timeline').TimelineClip[]
+  tracks: import('@/types/timeline').Track[]
+  totalDuration: number
+  scrollLeft: number
+  containerWidth: number
+  pxPerSec: number
+  contentWidth: number
+  onScrollTo: (sl: number) => void
+}): JSX.Element | null {
+  if (totalDuration <= 0) return null
+  const mmRef = useRef<HTMLDivElement>(null)
+  const isDragging = useRef(false)
+
+  const viewportFrac  = Math.min(1, (containerWidth) / Math.max(1, contentWidth))
+  const viewportLeft  = (scrollLeft / Math.max(1, contentWidth)) * (1 - viewportFrac > 0 ? 1 : 1)
+  const scrollRatio   = contentWidth > containerWidth ? scrollLeft / (contentWidth - containerWidth) : 0
+  const vpW = viewportFrac * 100
+  const vpL = scrollRatio * (100 - vpW)
+
+  function seekFromMouse(clientX: number) {
+    const rect = mmRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const frac = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+    const targetScrollLeft = frac * contentWidth - containerWidth / 2
+    onScrollTo(Math.max(0, targetScrollLeft))
+  }
+
+  function handlePointerDown(e: React.PointerEvent) {
+    isDragging.current = true
+    ;(e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId)
+    seekFromMouse(e.clientX)
+  }
+  function handlePointerMove(e: React.PointerEvent) {
+    if (!isDragging.current) return
+    seekFromMouse(e.clientX)
+  }
+  function handlePointerUp() {
+    isDragging.current = false
+  }
+
+  return (
+    <div
+      ref={mmRef}
+      className="shrink-0 bg-[var(--bg-base)] border-b border-[var(--border-subtle)] relative cursor-pointer select-none overflow-hidden"
+      style={{ height: 22 }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+    >
+      {/* Header offset blank */}
+      <div className="absolute top-0 bottom-0 left-0 bg-[var(--bg-surface)] z-10 pointer-events-none"
+        style={{ width: HEADER_WIDTH }} />
+
+      {/* Clip blocks */}
+      {clips.map((clip) => (
+        <div
+          key={clip.id}
+          className="absolute top-2 bottom-2 rounded-sm pointer-events-none"
+          style={{
+            left:  HEADER_WIDTH + (clip.startTime / totalDuration) * (mmRef.current?.clientWidth ? mmRef.current.clientWidth - HEADER_WIDTH : 500),
+            width: Math.max(2, (clip.duration / totalDuration) * (mmRef.current?.clientWidth ? mmRef.current.clientWidth - HEADER_WIDTH : 500)),
+            background: clip.labelColor ?? CLIP_MINI_COLOR[clip.type] ?? '#a78bfa',
+            opacity: 0.7
+          }}
+        />
+      ))}
+
+      {/* Viewport window */}
+      <div
+        className="absolute top-0 bottom-0 pointer-events-none z-10"
+        style={{
+          left:  `calc(${HEADER_WIDTH}px + ${vpL}% * (100% - ${HEADER_WIDTH}px) / 100)`,
+          width: `calc(${vpW}% * (100% - ${HEADER_WIDTH}px) / 100)`,
+          background: 'rgba(255,255,255,0.06)',
+          border: '1px solid rgba(255,255,255,0.15)',
+          borderRadius: 2
+        }}
+      />
+    </div>
   )
 }

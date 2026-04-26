@@ -13,8 +13,11 @@ interface TimelineRulerProps {
   markers?: TimelineMarker[]
   onRemoveMarker?: (id: string) => void
   onUpdateMarkerLabel?: (id: string, label: string) => void
+  onUpdateMarkerColor?: (id: string, color: string) => void
   format?: 'seconds' | 'timecode'
 }
+
+const MARKER_COLORS = ['#f59e0b', '#ef4444', '#22c55e', '#22d3ee', '#a855f7', '#ffffff']
 
 /** Return major/minor tick intervals (in seconds) for the current zoom level. */
 function getTickConfig(pxPerSec: number): { major: number; minor: number } {
@@ -39,6 +42,7 @@ export default function TimelineRuler({
   markers = [],
   onRemoveMarker,
   onUpdateMarkerLabel,
+  onUpdateMarkerColor,
   format = 'seconds'
 }: TimelineRulerProps): JSX.Element {
   const rulerRef = useRef<HTMLDivElement>(null)
@@ -165,27 +169,44 @@ export default function TimelineRuler({
               )}
             </div>
 
-            {/* Inline label editor */}
+            {/* Inline label editor + color picker */}
             {isEditing && (
-              <input
-                autoFocus
-                value={editingLabel}
-                onChange={(e) => setEditingLabel(e.target.value)}
-                onBlur={() => {
-                  onUpdateMarkerLabel?.(marker.id, editingLabel.trim())
-                  setEditingMarkerId(null)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
+              <div
+                className="absolute bottom-[12px] left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 z-30"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  autoFocus
+                  value={editingLabel}
+                  onChange={(e) => setEditingLabel(e.target.value)}
+                  onBlur={() => {
                     onUpdateMarkerLabel?.(marker.id, editingLabel.trim())
                     setEditingMarkerId(null)
-                  }
-                  if (e.key === 'Escape') setEditingMarkerId(null)
-                  e.stopPropagation()
-                }}
-                className="absolute bottom-[10px] left-1/2 -translate-x-1/2 w-24 text-[9px] px-1 py-0 rounded border border-[var(--accent)] bg-[var(--bg-base)] text-[var(--text-primary)] outline-none"
-                onClick={(e) => e.stopPropagation()}
-              />
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      onUpdateMarkerLabel?.(marker.id, editingLabel.trim())
+                      setEditingMarkerId(null)
+                    }
+                    if (e.key === 'Escape') setEditingMarkerId(null)
+                    e.stopPropagation()
+                  }}
+                  className="w-24 text-[9px] px-1 py-0.5 rounded border border-[var(--accent)] bg-[var(--bg-base)] text-[var(--text-primary)] outline-none"
+                />
+                <div className="flex gap-1 bg-[var(--bg-overlay)] border border-[var(--border)] rounded px-1.5 py-1">
+                  {MARKER_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => onUpdateMarkerColor?.(marker.id, c)}
+                      className="w-3 h-3 rounded-full border-2 transition-transform hover:scale-125"
+                      style={{
+                        background: c,
+                        borderColor: marker.color === c ? 'white' : 'transparent'
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         )
