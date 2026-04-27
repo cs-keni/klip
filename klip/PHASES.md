@@ -646,19 +646,19 @@ Every interaction should feel responsive and alive — not flashy, just smooth a
 
 ### P1 — UX Gaps (missing feedback loops)
 
-- [ ] **Export pre-flight validation** — Before starting export, check: (a) output folder exists and is writable, (b) filename contains no invalid Windows characters (`< > : " | ? *`), (c) rough disk-space estimate vs. available space. Show inline field errors in real time as the user types; block the Export button until valid.
+- [x] **Export pre-flight validation** — Before starting export, check: (a) output folder exists and is writable, (b) filename contains no invalid Windows characters (`< > : " | ? *`), (c) rough disk-space estimate vs. available space. Show inline field errors in real time as the user types; block the Export button until valid.
 
-- [ ] **Waveform extraction failure shows a toast** — Currently, if FFmpeg fails to extract waveform data (disk full, FFmpeg missing, corrupted audio), the hook returns `peaks: null` silently and the timeline shows no waveform. Show a toast: "Waveform generation failed for [clip name]" with a Retry option.
+- [x] **Waveform extraction failure shows a toast** — Currently, if FFmpeg fails to extract waveform data (disk full, FFmpeg missing, corrupted audio), the hook returns `peaks: null` silently and the timeline shows no waveform. Show a toast: "Waveform generation failed for [clip name]" with a Retry option.
 
-- [ ] **Copy confirmation toast with count** — The current copy confirmation is a brief flash on the copied clip(s), easy to miss. Replace with (or supplement with) a toast: "Copied 1 clip" / "Copied 3 clips" that appears bottom-right and auto-dismisses in 2s.
+- [x] **Copy confirmation toast with count** — The current copy confirmation is a brief flash on the copied clip(s), easy to miss. Replace with (or supplement with) a toast: "Copied 1 clip" / "Copied 3 clips" that appears bottom-right and auto-dismisses in 2s.
 
-- [ ] **Undo/redo empty-state tooltip** — When the undo or redo stack is empty, the toolbar button is `opacity-50` but shows no tooltip. Add: "Nothing to undo (Ctrl+Z)" / "Nothing to redo (Ctrl+Shift+Z)" so users understand they've hit the history boundary.
+- [x] **Undo/redo empty-state tooltip** — When the undo or redo stack is empty, the toolbar button is `opacity-50` but shows no tooltip. Add: "Nothing to undo (Ctrl+Z)" / "Nothing to redo (Ctrl+Shift+Z)" so users understand they've hit the history boundary.
 
-- [ ] **Clip duration minimum-clamp warning** — `Math.max(0.1, ...)` silently floors clip duration during trim. Show a one-shot toast "Minimum clip duration is 0.1 s" the first time a trim hits the floor so the user understands why the handle stopped moving.
+- [x] **Clip duration minimum-clamp warning** — `Math.max(0.1, ...)` silently floors clip duration during trim. Show a one-shot toast "Minimum clip duration is 0.1 s" the first time a trim hits the floor so the user understands why the handle stopped moving.
 
-- [ ] **"Clear Proxy Cache" requires confirmation** — One click deletes potentially gigabytes of proxy files with no warning. Show a dialog: "Clear X MB of proxy files? They will be regenerated on next import." with a Cancel option.
+- [x] **"Clear Proxy Cache" requires confirmation** — One click deletes potentially gigabytes of proxy files with no warning. Show a dialog: "Clear X MB of proxy files? They will be regenerated on next import." with a Cancel option.
 
-- [ ] **Playhead position saved and restored in project JSON** — The current playhead time is not serialized. Opening a saved project always drops the playhead at 0:00. Add `playheadTime` to `serializeProject()` / `deserializeProject()` so the editor reopens exactly where the user left off.
+- [x] **Playhead position saved and restored in project JSON** — The current playhead time is not serialized. Opening a saved project always drops the playhead at 0:00. Add `playheadTime` to `serializeProject()` / `deserializeProject()` so the editor reopens exactly where the user left off.
 
 ### P2 — Animation & Polish
 

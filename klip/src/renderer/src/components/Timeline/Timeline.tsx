@@ -592,8 +592,8 @@ export default function Timeline(): JSX.Element {
       {/* ── Toolbar ──────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-1 px-2 h-8 bg-[var(--bg-surface)] border-b border-[var(--border-subtle)] shrink-0">
         <div className="flex items-center gap-0.5">
-          <ToolbarButton icon={<Undo2 size={12} />} title="Undo (Ctrl+Z)" onClick={undo} disabled={past.length === 0} />
-          <ToolbarButton icon={<Redo2 size={12} />} title="Redo (Ctrl+Shift+Z)" onClick={redo} disabled={future.length === 0} />
+          <ToolbarButton icon={<Undo2 size={12} />} title={past.length === 0 ? 'Nothing to undo (Ctrl+Z)' : 'Undo (Ctrl+Z)'} onClick={undo} disabled={past.length === 0} />
+          <ToolbarButton icon={<Redo2 size={12} />} title={future.length === 0 ? 'Nothing to redo (Ctrl+Shift+Z)' : 'Redo (Ctrl+Shift+Z)'} onClick={redo} disabled={future.length === 0} />
         </div>
 
         <div className="w-px h-4 bg-[var(--border-subtle)] mx-1" />

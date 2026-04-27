@@ -271,6 +271,7 @@ function AppTab(): JSX.Element {
   const { defaultExportFolder, setDefaultExportFolder, musicLibraryFolder, setMusicLibraryFolder, setHasSeenWalkthrough } = useAppSettingsStore()
   const [cacheInfo, setCacheInfo] = useState<{ count: number; totalBytes: number } | null>(null)
   const [clearing, setClearing] = useState(false)
+  const [confirmClear, setConfirmClear] = useState(false)
 
   useEffect(() => {
     window.api.settings.proxyCacheInfo().then(setCacheInfo)
@@ -287,6 +288,7 @@ function AppTab(): JSX.Element {
   }
 
   async function handleClearCache(): Promise<void> {
+    setConfirmClear(false)
     setClearing(true)
     const count = await window.api.settings.clearProxyCache()
     setCacheInfo({ count: 0, totalBytes: 0 })
@@ -378,19 +380,38 @@ function AppTab(): JSX.Element {
               }
             </span>
           </div>
-          <button
-            onClick={handleClearCache}
-            disabled={clearing || cacheInfo == null || cacheInfo.count === 0}
-            className={cn(
-              'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium shrink-0 transition-all duration-100 active:scale-[0.97]',
-              'border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-secondary)]',
-              'hover:border-red-800 hover:bg-red-950/40 hover:text-red-400',
-              'disabled:opacity-40 disabled:pointer-events-none'
-            )}
-          >
-            <Trash2 size={12} />
-            {clearing ? 'Clearing…' : 'Clear Cache'}
-          </button>
+          {confirmClear ? (
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="text-xs text-[var(--text-muted)]">Sure?</span>
+              <button
+                onClick={() => setConfirmClear(false)}
+                className="px-2 py-1 rounded text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors duration-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleClearCache}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-red-950/60 border border-red-800 text-red-400 hover:bg-red-900/60 transition-colors duration-100 active:scale-[0.97]"
+              >
+                <Trash2 size={11} />
+                Clear
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmClear(true)}
+              disabled={clearing || cacheInfo == null || cacheInfo.count === 0}
+              className={cn(
+                'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium shrink-0 transition-all duration-100 active:scale-[0.97]',
+                'border border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text-secondary)]',
+                'hover:border-red-800 hover:bg-red-950/40 hover:text-red-400',
+                'disabled:opacity-40 disabled:pointer-events-none'
+              )}
+            >
+              <Trash2 size={12} />
+              {clearing ? 'Clearing…' : 'Clear Cache'}
+            </button>
+          )}
         </div>
       </SettingRow>
 

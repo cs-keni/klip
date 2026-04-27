@@ -4,6 +4,7 @@ import { pathToFileUrl } from '@/lib/mediaUtils'
 export interface WaveformState {
   peaks: Float32Array | null
   loading: boolean
+  error: boolean
 }
 
 /** Number of peak samples stored per second of audio. */
@@ -84,31 +85,31 @@ export function useWaveform(
   type: string,
   clipId?: string
 ): WaveformState {
-  const [state, setState] = useState<WaveformState>({ peaks: null, loading: false })
+  const [state, setState] = useState<WaveformState>({ peaks: null, loading: false, error: false })
 
   useEffect(() => {
     const isAudio = type === 'audio'
     const isVideo = type === 'video'
 
     if (!path || (!isAudio && !isVideo)) {
-      setState({ peaks: null, loading: false })
+      setState({ peaks: null, loading: false, error: false })
       return
     }
 
     // For video clips we need a clipId to key the disk cache
     if (isVideo && !clipId) {
-      setState({ peaks: null, loading: false })
+      setState({ peaks: null, loading: false, error: false })
       return
     }
 
     // Memory cache hit — serve immediately, no loading flicker
     const cached = peaksCache.get(path)
     if (cached) {
-      setState({ peaks: cached, loading: false })
+      setState({ peaks: cached, loading: false, error: false })
       return
     }
 
-    setState({ peaks: null, loading: true })
+    setState({ peaks: null, loading: true, error: false })
     let cancelled = false
 
     // Deduplicate concurrent requests for the same file
@@ -127,7 +128,7 @@ export function useWaveform(
     }
 
     req.then((peaks) => {
-      if (!cancelled) setState({ peaks: peaks ?? null, loading: false })
+      if (!cancelled) setState({ peaks: peaks ?? null, loading: false, error: peaks === null })
     })
 
     return () => { cancelled = true }

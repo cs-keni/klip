@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { formatDuration } from '@/lib/mediaUtils'
 import { useTimelineStore } from '@/stores/timelineStore'
 import { useMediaStore } from '@/stores/mediaStore'
+import { toast } from '@/stores/toastStore'
 import { useWaveform } from '@/hooks/useWaveform'
 import { dragRegistry } from '@/lib/dragRegistry'
 import { setSnapTime } from '@/lib/snapIndicator'
@@ -73,7 +74,15 @@ export default function TimelineClipView({
   const mediaClip = mediaClips.find((m) => m.id === clip.mediaClipId) ?? null
 
   // ── Waveform (audio + video clips) ──────────────────────────────────────────
-  const { peaks, loading: waveformLoading } = useWaveform(mediaClip?.path ?? null, clip.type, clip.id)
+  const { peaks, loading: waveformLoading, error: waveformError } = useWaveform(mediaClip?.path ?? null, clip.type, clip.id)
+
+  const waveformErrorToasted = useRef(false)
+  useEffect(() => {
+    if (waveformError && !waveformErrorToasted.current) {
+      waveformErrorToasted.current = true
+      toast(`Waveform unavailable for "${clip.name}"`, 'warning', 3500)
+    }
+  }, [waveformError, clip.name])
 
   // ── Motion values for 60fps drag ────────────────────────────────────────────
   const leftMV  = useMotionValue(clip.startTime * pxPerSec)
@@ -344,11 +353,14 @@ export default function TimelineClipView({
         } else {
           leftMV.set(drag.origStart    * pxPerSec)
           widthMV.set(drag.origDuration * pxPerSec)
+          toast('Clip is at minimum duration', 'info', 1500)
         }
       } else {
         const rawEnd  = drag.origStart + drag.origDuration + dt
         const snapped = snapTime(rawEnd, snapPts)
-        const newDur  = Math.max(MIN_DUR, snapped - drag.origStart)
+        const rawDur  = snapped - drag.origStart
+        const newDur  = Math.max(MIN_DUR, rawDur)
+        if (rawDur < MIN_DUR) toast('Clip is at minimum duration', 'info', 1500)
         if (Math.abs(newDur - drag.origDuration) > 0.001) {
           if (independent) trimClipOnly(clip.id, { duration: newDur })
           else trimClip(clip.id, { duration: newDur })

@@ -444,11 +444,15 @@ function IdleContent({
   embedChapters: boolean
   setEmbedChapters: (v: boolean) => void
 }): JSX.Element {
+  const INVALID_FILENAME_CHARS = /[<>:"|?*]/
+  const fileNameTrimmed = fileName.trim()
+  const fileNameInvalid = INVALID_FILENAME_CHARS.test(fileNameTrimmed)
   const canExport =
     videoClipCount > 0 &&
     missingVideoClipCount === 0 &&
     outputFolder.length > 0 &&
-    fileName.trim().length > 0
+    fileNameTrimmed.length > 0 &&
+    !fileNameInvalid
   const [showHistory, setShowHistory] = useState(false)
 
   return (
@@ -550,15 +554,27 @@ function IdleContent({
           </div>
 
           {/* File name */}
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={fileName}
-              onChange={(e) => setFileName(e.target.value)}
-              placeholder="my-edit"
-              className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-[var(--bg-base)] border border-[var(--border-subtle)] text-xs text-[var(--text-secondary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-dim)] transition-colors"
-            />
-            <span className="text-xs text-[var(--text-muted)] shrink-0">.{ext}</span>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={fileName}
+                onChange={(e) => setFileName(e.target.value)}
+                placeholder="my-edit"
+                className={cn(
+                  'flex-1 min-w-0 px-3 py-2 rounded-lg bg-[var(--bg-base)] text-xs text-[var(--text-secondary)] placeholder:text-[var(--text-muted)] focus:outline-none transition-colors',
+                  fileNameInvalid
+                    ? 'border border-red-500/60 focus:border-red-500'
+                    : 'border border-[var(--border-subtle)] focus:border-[var(--accent-dim)]'
+                )}
+              />
+              <span className="text-xs text-[var(--text-muted)] shrink-0">.{ext}</span>
+            </div>
+            {fileNameInvalid && (
+              <p className="text-[10px] text-red-400 pl-1">
+                Filename cannot contain: {'< > : " | ? *'}
+              </p>
+            )}
           </div>
 
           {/* Full path preview */}

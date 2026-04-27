@@ -25,7 +25,7 @@ const DEFAULT_TRACKS: Track[] = [
 export function serializeProject(): object {
   const { projectName, projectPath, settings } = useProjectStore.getState()
   const { clips: mediaClips } = useMediaStore.getState()
-  const { tracks, clips: timelineClips, transitions, markers, masterVolume } = useTimelineStore.getState()
+  const { tracks, clips: timelineClips, transitions, markers, masterVolume, playheadTime } = useTimelineStore.getState()
 
   // Strip base64 thumbnails — they can be multiple MB and are fully regenerable
   // from source media when the project is reopened. thumbnailStatus resets to
@@ -48,6 +48,7 @@ export function serializeProject(): object {
     savedAt: new Date().toISOString(),
     settings,
     masterVolume,
+    playheadTime,
     mediaClips: strippedMediaClips,
     tracks,
     timelineClips: strippedTimelineClips,
@@ -85,7 +86,7 @@ function deserializeProject(data: any, path: string): void {
     selectedClipId: null,
     selectedClipIds: [],
     clipboard: null,
-    playheadTime: 0,
+    playheadTime: typeof data.playheadTime === 'number' ? data.playheadTime : 0,
     isPlaying: false,
     loopIn: null,
     loopOut: null,
