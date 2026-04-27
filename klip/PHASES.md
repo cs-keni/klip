@@ -557,6 +557,121 @@ Every interaction should feel responsive and alive — not flashy, just smooth a
 
 ---
 
+---
+
+## Phase 11 — Bug Fixes II ✅ COMPLETE
+
+> Goal: Squash logic bugs found in code audit after Phase 10 shipped.
+
+### Logic Bugs
+
+- [x] **`rippleDelete` (single clip) doesn't shift clips on the linked track**
+  - **Root cause:** `rippleDelete` only shifted clips on `clip.trackId`. When a linked video+audio pair was ripple-deleted, the audio clip (on `a1`) was removed, but subsequent clips on `a1` (e.g., the next clip's audio) were NOT shifted left. This left all subsequent audio clips 5–60s ahead of their video counterparts.
+  - **Fix (`timelineStore.ts` `rippleDelete`):** After removing the linked pair, also compute `linkedGapEnd` from the linked clip's position and duration. Shift any clip on `linkedClip.trackId` that starts at or after `linkedGapEnd` by `linkedClip.duration`, mirroring what was already done for the primary track.
+
+- [x] **`DEFAULT_TRACKS` in `projectIO.ts` was missing the `a2` Extra Audio track**
+  - **Root cause:** The 4-item `DEFAULT_TRACKS` array used as a fallback during project open/crash-recovery was never updated when the `a2` Extra Audio track was added in Phase 5. Projects opened without a stored `tracks` array (old format, corrupted save, or autosave recovery edge case) would restore the editor with only 4 tracks — no Extra Audio lane.
+  - **Fix (`projectIO.ts`):** Added `{ id: 'a2', type: 'audio', name: 'Extra Audio', ... }` to the fallback `DEFAULT_TRACKS` array so it matches `timelineStore.ts` exactly.
+
+- [x] **`advanceGap` ignored `previewSpeed` — gap playback was always 1× real-time**
+  - **Root cause:** The `advanceGap` helper (used when the playhead passes through a gap between timeline clips) advanced time by `(wallClock - start) / 1000` seconds, which is always 1× speed regardless of the user's selected preview speed. At 2× preview speed, the playhead would correctly double-speed through clips but then drop back to 1× through gaps, causing a jarring slowdown.
+  - **Fix (`PreviewPanel.tsx` `advanceGap`):** Multiply the elapsed wall-clock seconds by `previewSpeedRef.current` so gaps advance at the same rate as clips.
+
+- [x] **`ResizeObserver` not polyfilled in jsdom — REG-001 (PreviewPanel mount test) was broken**
+  - **Root cause:** Phase 9 added a `ResizeObserver` in `PreviewPanel.tsx` to measure canvas height for WYSIWYG text font sizing. jsdom (used by Vitest) doesn't implement `ResizeObserver`, causing REG-001 to throw on mount rather than testing the original TDZ crash.
+  - **Fix (`src/tests/setup.ts`):** Added a no-op `ResizeObserver` class stub alongside the existing `scrollIntoView` stub.
+
+### New Regression Tests
+
+- [x] **REG-012** — `rippleDelete` with a linked pair now also shifts clips on the linked track
+- [x] **REG-013** — `projectIO.ts` DEFAULT_TRACKS has all 5 tracks including `a2`
+
+---
+
+## Phase 12 — Quality & Polish ✅ COMPLETE
+
+> Ideas surfaced during the Phase 11 audit. All items implemented.
+
+### P0 — Undo Coverage Gaps (user-visible inconsistency) ✅
+- [x] **`commitClipUndo()` added to `timelineStore`** — snapshots current state into the undo stack without modifying it. Called on `onPointerDown` from `SliderRow` and `onDragStart` from `FadeHandle`/`ZoomMinimap` so each drag produces exactly one undo entry.
+- [x] **`renameClip` and `setClipLabelColor` now push to undo stack** — consistent with `setClipSpeed` and other structural ops.
+- [x] **Volume / fade / color-grade / crop / pan sliders in `ClipContextMenu`** — all wired with `onPointerDown={onCommitUndo}` so the pre-drag state is captured as one undo entry.
+- [x] **`FadeHandle` and `ZoomMinimap`** — each gained `onDragStart` prop, called before the drag mutates state.
+
+### P1 — Master Volume Persisted ✅
+- [x] **`masterVolume` serialized in project JSON** — added to `serializeProject()` and restored in `deserializeProject()` (defaults to `1` for legacy projects).
+
+### P1 — True Dip-to-Black Export ✅
+- [x] **`dip-to-black` now uses `D/2` fades** — each clip fades to/from black over half the transition duration, producing a genuine black frame between clips. `fade` type continues to use the full duration for a true crossfade appearance.
+
+### P2 — `extractAudio` Inherits Video-Specific Fields ✅
+- [x] **`extractAudio` now explicitly copies only audio-relevant fields** — no more `textSettings`, `colorSettings`, `cropSettings`, `thumbnail`, `role`, `labelColor`, or any video-only data on the extracted audio clip.
+
+### P2 — Preview Speed During Gap Advance ✅
+- [x] **`reverseAdvanceGap` already multiplied by `previewSpeedRef.current`** — confirmed correct; this was only an issue in `advanceGap` which was fixed in Phase 11.
+
+### P3 — Worthwhile New Features ✅ (subset implemented)
+- [x] **Export to GIF / WebM** — two new presets added: `Animated GIF` (1280×720 @ 15fps, palette-based, no audio) and `WebM (VP9)` (1080p @ 30fps, VP9+Opus). File extension in the path preview updates dynamically.
+- [x] **Zoom to selection** — `Shift+\` (`|`) zooms the timeline so selected clips fill the viewport, scrolling to keep them centered. Falls back to zoom-to-fit when no clips are selected.
+- [x] **Marker navigation shortcuts** — `[` jumps to the previous marker, `]` jumps to the next marker.
+- [x] **Timeline ruler right-click → add marker** — right-clicking anywhere on the ruler places a marker at that time position. Faster than pressing `M`.
+
+- [ ] **Volume keyframes** — requires keyframe data model (deferred; significant scope).
+- [ ] **Auto-duck music** — requires cross-clip analysis pass (deferred).
+- [ ] **Batch audio normalize** — deferred; can be done as a future feature.
+- [ ] **Clip speed ramp** — requires non-linear `setpts` expression (deferred).
+- [ ] **Clip group / compound clip** — significant UI scope (deferred).
+
+---
+
+---
+
+## Phase 13 — Hardening & Polish
+
+> Goal: Close the remaining gaps between "functional" and "trustworthy." Every action should give the user clear feedback; every failure should be handled gracefully.
+
+### P0 — Correctness Bugs (data-loss or silent-failure risk)
+
+- [x] **Save-before-close confirmation** — Ctrl+W / title-bar ✕ with unsaved changes shows a modal: "Save before closing?" with Save / Discard / Cancel. Currently the app closes silently and the user may lose work that hasn't been auto-saved yet.
+
+- [x] **Undo stack cleared on "New Project"** — Opening or creating a new project should reset `past` and `future` to empty. Currently the previous project's history lingers, so Ctrl+Z can undo across a project boundary into stale state.
+
+- [x] **Loop in/out range cleared on project open** — The loop range (`loopStart`, `loopEnd`, `isLooping`) is not reset when a different project is opened. Users arrive at a new project with a confusing loop baked in from the last session.
+
+- [x] **Autosave corruption graceful fallback** — The crash-recovery flow calls `JSON.parse()` on the autosave file without a try-catch. A truncated write (power loss mid-save) throws uncaught, causing the crash-recovery dialog to silently fail. Wrap in try-catch; offer "Autosave was corrupted — start fresh or open a project."
+
+- [x] **Proxy FFmpeg process cancelled when source clip is removed** — Deleting a clip from the media bin while its proxy is still generating leaves a zombie FFmpeg child process running in the background, burning CPU until it finishes. `removeMediaClip` should kill the in-flight child process if one is tracked for that `mediaClipId`.
+
+- [x] **Export IPC failure leaves UI frozen** — The `await window.api.export.start(job)` call in `ExportDialog` has no `.catch()` handler. If the IPC channel rejects (FFmpeg binary missing, path traversal blocked), the dialog stays in the "exporting" state indefinitely. Add error handling that transitions to the error state with a human-readable message.
+
+### P1 — UX Gaps (missing feedback loops)
+
+- [ ] **Export pre-flight validation** — Before starting export, check: (a) output folder exists and is writable, (b) filename contains no invalid Windows characters (`< > : " | ? *`), (c) rough disk-space estimate vs. available space. Show inline field errors in real time as the user types; block the Export button until valid.
+
+- [ ] **Waveform extraction failure shows a toast** — Currently, if FFmpeg fails to extract waveform data (disk full, FFmpeg missing, corrupted audio), the hook returns `peaks: null` silently and the timeline shows no waveform. Show a toast: "Waveform generation failed for [clip name]" with a Retry option.
+
+- [ ] **Copy confirmation toast with count** — The current copy confirmation is a brief flash on the copied clip(s), easy to miss. Replace with (or supplement with) a toast: "Copied 1 clip" / "Copied 3 clips" that appears bottom-right and auto-dismisses in 2s.
+
+- [ ] **Undo/redo empty-state tooltip** — When the undo or redo stack is empty, the toolbar button is `opacity-50` but shows no tooltip. Add: "Nothing to undo (Ctrl+Z)" / "Nothing to redo (Ctrl+Shift+Z)" so users understand they've hit the history boundary.
+
+- [ ] **Clip duration minimum-clamp warning** — `Math.max(0.1, ...)` silently floors clip duration during trim. Show a one-shot toast "Minimum clip duration is 0.1 s" the first time a trim hits the floor so the user understands why the handle stopped moving.
+
+- [ ] **"Clear Proxy Cache" requires confirmation** — One click deletes potentially gigabytes of proxy files with no warning. Show a dialog: "Clear X MB of proxy files? They will be regenerated on next import." with a Cancel option.
+
+- [ ] **Playhead position saved and restored in project JSON** — The current playhead time is not serialized. Opening a saved project always drops the playhead at 0:00. Add `playheadTime` to `serializeProject()` / `deserializeProject()` so the editor reopens exactly where the user left off.
+
+### P2 — Animation & Polish
+
+- [ ] **Export dialog state cross-fade** — The `DialogState` switch between `idle → exporting → done → error` is a hard DOM swap. Wrap the content areas in `<AnimatePresence mode="wait">` with a 150ms fade so the progress bar slides in rather than snapping.
+
+- [ ] **Clip resize handles scale with zoom** — Trim handle hit-targets are a fixed pixel width in `TimelineClipView`. At high zoom they're oversized; at low zoom they're unclickable. Compute handle width as `clamp(6, 12 / zoomFactor, 20)` so they scale inversely with zoom and remain usable at all levels.
+
+- [ ] **Tooltip delay reduced to 150 ms** — The global tooltip delay is 300ms (`delayDuration` in `tooltip.tsx`). At that speed, tooltips appear after the user has already moved on. 150ms is the standard for dense tool-heavy apps (Figma, VS Code); change the default.
+
+- [ ] **Stale markers auto-removed when timeline shrinks** — If clips are deleted and the total timeline duration shrinks, markers that now fall beyond the new end time become invisible orphans in the store. On any operation that reduces `totalDuration`, prune any `TimelineMarker` whose `time > newDuration` and show a toast if any were removed.
+
+---
+
 ## Phase Order Summary
 
 | Phase | Focus | Dependency |
@@ -571,3 +686,6 @@ Every interaction should feel responsive and alive — not flashy, just smooth a
 | 8 | Tutorial, Polish & Settings | All phases |
 | 9 | Bug Fixes | All phases |
 | 10 | Seamless & Modern UX | Phase 9 |
+| 11 | Bug Fixes II | Phase 10 |
+| 12 | Quality & Polish (ideas) | Phase 11 |
+| 13 | Hardening & Polish | Phase 12 |

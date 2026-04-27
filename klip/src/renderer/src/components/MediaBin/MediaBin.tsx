@@ -39,6 +39,10 @@ export default function MediaBin(): JSX.Element {
       const tag = (e.target as HTMLElement).tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
       if (selectedClipId) {
+        const clip = useMediaStore.getState().clips.find((c) => c.id === selectedClipId)
+        if (clip?.type === 'video' && clip.proxyStatus === 'generating') {
+          window.api.proxy.cancelProxy(selectedClipId)
+        }
         removeClip(selectedClipId)
       }
     }
@@ -373,6 +377,9 @@ export default function MediaBin(): JSX.Element {
             onClose={() => setContextMenu(null)}
             onRename={() => setRenamingClipId(contextMenu.clip.id)}
             onRemove={() => {
+              if (contextMenu.clip.type === 'video' && contextMenu.clip.proxyStatus === 'generating') {
+                window.api.proxy.cancelProxy(contextMenu.clip.id)
+              }
               removeClip(contextMenu.clip.id)
               setContextMenu(null)
             }}

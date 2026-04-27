@@ -66,7 +66,7 @@ export default function TimelineClipView({
     addTransition, removeTransition,
     insertFreezeFrame,
     snapEnabled,
-    setClipLabelColor, renameClip, extractAudio
+    setClipLabelColor, renameClip, extractAudio, commitClipUndo
   } = useTimelineStore()
   const { clips: mediaClips, addClip: addMediaClip } = useMediaStore()
 
@@ -631,6 +631,7 @@ export default function TimelineClipView({
             clipHeight={clipHeight}
             color={style.border}
             onFadeChange={(newFadeIn) => setClipFades(clip.id, newFadeIn, clip.fadeOut ?? 0)}
+            onDragStart={commitClipUndo}
           />
         )}
 
@@ -644,6 +645,7 @@ export default function TimelineClipView({
             clipHeight={clipHeight}
             color={style.border}
             onFadeChange={(newFadeOut) => setClipFades(clip.id, clip.fadeIn ?? 0, newFadeOut)}
+            onDragStart={commitClipUndo}
           />
         )}
 
@@ -689,6 +691,7 @@ export default function TimelineClipView({
             onLabelColor={(c) => setClipLabelColor(clip.id, c)}
             onRename={() => { setRenameValue(clip.name); setIsRenaming(true) }}
             onExtractAudio={clip.type === 'video' ? () => extractAudio(clip.id) : undefined}
+            onCommitUndo={commitClipUndo}
             mediaPath={mediaClip?.path ?? null}
             onClose={() => setCtxMenu(null)}
           />
@@ -736,6 +739,7 @@ function ClipContextMenu({
   onColorChange, onCropChange, onAddTransition, onRemoveTransition,
   onUnlink, onFadeChange, onNormalize, onRoleChange, onFreezeFrame,
   onLabelColor, onRename, onExtractAudio,
+  onCommitUndo,
   mediaPath, onClose
 }: {
   x: number
@@ -759,6 +763,7 @@ function ClipContextMenu({
   onLabelColor: (color: string | undefined) => void
   onRename: () => void
   onExtractAudio?: () => void
+  onCommitUndo: () => void
   mediaPath: string | null
   onClose: () => void
 }): JSX.Element {
@@ -877,6 +882,7 @@ function ClipContextMenu({
             min={0} max={200} step={1}
             value={Math.round(volume * 100)}
             display={`${Math.round(volume * 100)}%`}
+            onPointerDown={onCommitUndo}
             onChange={(v) => onVolumeChange(v / 100)}
           />
           {volume > 1.005 && (
@@ -920,6 +926,7 @@ function ClipContextMenu({
                 min={0} max={Math.min(10, Math.floor(clip.duration / 2 * 10) / 10)} step={0.1}
                 value={parseFloat(fadeIn.toFixed(1))}
                 display={fadeIn > 0 ? `${fadeIn.toFixed(1)}s` : 'Off'}
+                onPointerDown={onCommitUndo}
                 onChange={(v) => onFadeChange(v, fadeOut)}
               />
             </div>
@@ -929,6 +936,7 @@ function ClipContextMenu({
                 min={0} max={Math.min(10, Math.floor(clip.duration / 2 * 10) / 10)} step={0.1}
                 value={parseFloat(fadeOut.toFixed(1))}
                 display={fadeOut > 0 ? `${fadeOut.toFixed(1)}s` : 'Off'}
+                onPointerDown={onCommitUndo}
                 onChange={(v) => onFadeChange(fadeIn, v)}
               />
             </div>
@@ -992,6 +1000,7 @@ function ClipContextMenu({
               min={-100} max={100} step={1}
               value={Math.round(colorS.brightness * 100)}
               display={fmtSigned(colorS.brightness)}
+              onPointerDown={onCommitUndo}
               onChange={(v) => onColorChange({ ...colorS, brightness: v / 100 })}
               zero
             />
@@ -1000,6 +1009,7 @@ function ClipContextMenu({
               min={-100} max={100} step={1}
               value={Math.round(colorS.contrast * 100)}
               display={fmtSigned(colorS.contrast)}
+              onPointerDown={onCommitUndo}
               onChange={(v) => onColorChange({ ...colorS, contrast: v / 100 })}
               zero
             />
@@ -1008,6 +1018,7 @@ function ClipContextMenu({
               min={-100} max={100} step={1}
               value={Math.round(colorS.saturation * 100)}
               display={fmtSigned(colorS.saturation)}
+              onPointerDown={onCommitUndo}
               onChange={(v) => onColorChange({ ...colorS, saturation: v / 100 })}
               zero
             />
@@ -1055,6 +1066,7 @@ function ClipContextMenu({
               min={100} max={400} step={5}
               value={Math.round(cropS.zoom * 100)}
               display={`${cropS.zoom.toFixed(2)}×`}
+              onPointerDown={onCommitUndo}
               onChange={(v) => onCropChange({ ...cropS, zoom: v / 100 })}
             />
             {cropS.zoom > 1 && (
@@ -1065,12 +1077,14 @@ function ClipContextMenu({
                   panY={cropS.panY}
                   thumbnail={clip.thumbnail}
                   onChange={(px, py) => onCropChange({ ...cropS, panX: px, panY: py })}
+                  onDragStart={onCommitUndo}
                 />
                 <SliderRow
                   label="Pan X"
                   min={-100} max={100} step={1}
                   value={Math.round(cropS.panX * 100)}
                   display={fmtSigned(cropS.panX)}
+                  onPointerDown={onCommitUndo}
                   onChange={(v) => onCropChange({ ...cropS, panX: v / 100 })}
                   zero
                 />
@@ -1079,6 +1093,7 @@ function ClipContextMenu({
                   min={-100} max={100} step={1}
                   value={Math.round(cropS.panY * 100)}
                   display={fmtSigned(cropS.panY)}
+                  onPointerDown={onCommitUndo}
                   onChange={(v) => onCropChange({ ...cropS, panY: v / 100 })}
                   zero
                 />
@@ -1489,13 +1504,14 @@ function TextSettingsPanel({
 // viewport. Drag the box (or click anywhere) to reposition the zoom focus.
 
 function ZoomMinimap({
-  zoom, panX, panY, thumbnail, onChange
+  zoom, panX, panY, thumbnail, onChange, onDragStart
 }: {
   zoom: number
   panX: number
   panY: number
   thumbnail: string | null
   onChange: (panX: number, panY: number) => void
+  onDragStart?: () => void
 }): JSX.Element {
   const mapRef = useRef<HTMLDivElement>(null)
 
@@ -1524,6 +1540,7 @@ function ZoomMinimap({
   function startBoxDrag(e: React.PointerEvent) {
     e.preventDefault()
     e.stopPropagation()
+    onDragStart?.()
     const map = mapRef.current
     if (!map) return
     const rect = map.getBoundingClientRect()
@@ -1682,7 +1699,7 @@ function MenuSection({
 }
 
 function SliderRow({
-  label, min, max, step, value, display, onChange, zero = false
+  label, min, max, step, value, display, onChange, onPointerDown, zero = false
 }: {
   label?: string
   min: number
@@ -1691,6 +1708,7 @@ function SliderRow({
   value: number
   display: string
   onChange: (v: number) => void
+  onPointerDown?: () => void
   zero?: boolean
 }): JSX.Element {
   return (
@@ -1703,6 +1721,7 @@ function SliderRow({
         min={min} max={max} step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
+        onPointerDown={onPointerDown}
         className="flex-1 accent-[var(--accent)] h-1 cursor-pointer"
         onDoubleClick={zero ? () => onChange(0) : undefined}
       />
@@ -1730,7 +1749,8 @@ function FadeHandle({
   clipDuration,
   pxPerSec,
   color,
-  onFadeChange
+  onFadeChange,
+  onDragStart
 }: {
   side: 'in' | 'out'
   fadeDuration: number
@@ -1739,6 +1759,7 @@ function FadeHandle({
   clipHeight: number
   color: string
   onFadeChange: (newDuration: number) => void
+  onDragStart?: () => void
 }): JSX.Element {
   const isDragging = useRef(false)
   const maxFade    = clipDuration / 2
@@ -1757,6 +1778,7 @@ function FadeHandle({
     e.preventDefault()
     if (e.button !== 0) return
     isDragging.current = true
+    onDragStart?.()
     ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
   }
 

@@ -115,6 +115,10 @@ interface TimelineState {
   // ── Phase 10 clip actions ─────────────────────────────────────────────────
   setClipLabelColor: (clipId: string, color: string | undefined) => void
   renameClip:        (clipId: string, name: string) => void
+  /** Snapshot current state into the undo stack without modifying it.
+   *  Call this on slider/drag pointerdown so the pre-drag state is captured
+   *  as one undo entry instead of one entry per frame. */
+  commitClipUndo:    () => void
   extractAudio:      (videoClipId: string) => void
   pasteClipsWithRipple: () => void
 
@@ -462,8 +466,10 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       const clip = s.clips.find((c) => c.id === id)
       if (!clip) return s
       const linkedId = clip.linkedClipId
-      const gapEnd = clip.startTime + clip.duration
-      const idsToRemove = new Set([id, ...(linkedId ? [linkedId] : [])])
+      const linkedClip = linkedId ? s.clips.find((c) => c.id === linkedId) ?? null : null
+      const gapEnd       = clip.startTime + clip.duration
+      const linkedGapEnd = linkedClip ? linkedClip.startTime + linkedClip.duration : null
+      const idsToRemove  = new Set([id, ...(linkedId ? [linkedId] : [])])
       return {
         past: [...s.past.slice(-49), snapshot(s)],
         future: [],
@@ -471,11 +477,16 @@ export const useTimelineStore = create<TimelineState>((set) => ({
         selectedClipIds: s.selectedClipIds.filter((x) => !idsToRemove.has(x)),
         clips: s.clips
           .filter((c) => !idsToRemove.has(c.id))
-          .map((c) =>
-            c.trackId === clip.trackId && c.startTime >= gapEnd - 0.001
-              ? { ...c, startTime: c.startTime - clip.duration }
-              : c
-          ),
+          .map((c) => {
+            // Shift clips after the deleted clip on the video/primary track
+            if (c.trackId === clip.trackId && c.startTime >= gapEnd - 0.001)
+              return { ...c, startTime: c.startTime - clip.duration }
+            // Also shift clips after the deleted linked clip on its track (keeps sync)
+            if (linkedClip && linkedGapEnd !== null &&
+                c.trackId === linkedClip.trackId && c.startTime >= linkedGapEnd - 0.001)
+              return { ...c, startTime: c.startTime - linkedClip.duration }
+            return c
+          }),
         transitions: s.transitions.filter(
           (t) => !idsToRemove.has(t.fromClipId) && !idsToRemove.has(t.toClipId)
         )
@@ -867,12 +878,22 @@ export const useTimelineStore = create<TimelineState>((set) => ({
 
   setClipLabelColor: (clipId, color) =>
     set((s) => ({
+      past:  [...s.past.slice(-49), snapshot(s)],
+      future: [],
       clips: s.clips.map((c) => c.id === clipId ? { ...c, labelColor: color } : c)
     })),
 
   renameClip: (clipId, name) =>
     set((s) => ({
+      past:  [...s.past.slice(-49), snapshot(s)],
+      future: [],
       clips: s.clips.map((c) => c.id === clipId ? { ...c, name } : c)
+    })),
+
+  commitClipUndo: () =>
+    set((s) => ({
+      past:   [...s.past.slice(-49), snapshot(s)],
+      future: []
     })),
 
   extractAudio: (videoClipId) =>
@@ -886,10 +907,18 @@ export const useTimelineStore = create<TimelineState>((set) => ({
 
       const newAudioId = crypto.randomUUID()
       const extractedClip: TimelineClip = {
-        ...src,
         id:           newAudioId,
+        mediaClipId:  src.mediaClipId,
         trackId:      a2Track.id,
         type:         'audio',
+        name:         src.name,
+        startTime:    src.startTime,
+        duration:     src.duration,
+        trimStart:    src.trimStart,
+        thumbnail:    null,
+        volume:       src.volume,
+        fadeIn:       src.fadeIn,
+        fadeOut:      src.fadeOut,
         linkedClipId: undefined
       }
 

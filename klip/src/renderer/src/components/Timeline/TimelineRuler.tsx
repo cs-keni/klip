@@ -11,6 +11,7 @@ interface TimelineRulerProps {
   onScrubStart: () => void
   onScrubEnd: () => void
   markers?: TimelineMarker[]
+  onAddMarker?: (time: number) => void
   onRemoveMarker?: (id: string) => void
   onUpdateMarkerLabel?: (id: string, label: string) => void
   onUpdateMarkerColor?: (id: string, color: string) => void
@@ -40,6 +41,7 @@ export default function TimelineRuler({
   onScrubStart,
   onScrubEnd,
   markers = [],
+  onAddMarker,
   onRemoveMarker,
   onUpdateMarkerLabel,
   onUpdateMarkerColor,
@@ -93,12 +95,18 @@ export default function TimelineRuler({
 
   const playheadLeft = playheadTime * pxPerSec
 
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    if (onAddMarker) onAddMarker(timeFromEvent(e))
+  }
+
   return (
     <div
       ref={rulerRef}
       className="relative h-full cursor-col-resize select-none"
       style={{ width: contentWidth }}
       onMouseDown={handleMouseDown}
+      onContextMenu={handleContextMenu}
     >
       {/* Background */}
       <div className="absolute inset-0 bg-[var(--bg-elevated)]" />

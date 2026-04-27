@@ -770,7 +770,7 @@ export default function PreviewPanel(): JSX.Element {
 
     function tick(now: number) {
       if (!isPlayingRef.current) return
-      const newTime = Math.min(from + (now - startWall) / 1000, to)
+      const newTime = Math.min(from + (now - startWall) / 1000 * previewSpeedRef.current, to)
       setPlayheadTime(newTime)
 
       // Loop check during gap advance

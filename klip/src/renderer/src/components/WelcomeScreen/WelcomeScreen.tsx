@@ -3,8 +3,7 @@ import { motion } from 'framer-motion'
 import { Plus, FolderOpen, Clock, ChevronRight, Film } from 'lucide-react'
 import klipIcon from '@/assets/icon.ico'
 import { useAppStore } from '@/stores/appStore'
-import { useProjectStore } from '@/stores/projectStore'
-import { openProject } from '@/lib/projectIO'
+import { openProject, createNewProject } from '@/lib/projectIO'
 
 interface RecentEntry {
   name: string
@@ -26,7 +25,6 @@ function formatRelativeTime(isoString: string): string {
 
 export default function WelcomeScreen(): JSX.Element {
   const setView = useAppStore((s) => s.setView)
-  const newProject = useProjectStore((s) => s.newProject)
   const [recentProjects, setRecentProjects] = useState<RecentEntry[]>([])
 
   useEffect(() => {
@@ -34,7 +32,7 @@ export default function WelcomeScreen(): JSX.Element {
   }, [])
 
   function handleNewProject(): void {
-    newProject('Untitled Project')
+    createNewProject()
     setView('editor')
   }
 

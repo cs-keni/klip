@@ -13,10 +13,11 @@ import type { Track } from '@/types/timeline'
 // ── Default timeline state ───────────────────────────────────────────────────
 
 const DEFAULT_TRACKS: Track[] = [
-  { id: 'v1',       type: 'video',   name: 'Video 1', isLocked: false, isMuted: false, isSolo: false },
-  { id: 'a1',       type: 'audio',   name: 'Audio 1', isLocked: false, isMuted: false, isSolo: false },
-  { id: 'm1',       type: 'music',   name: 'Music',   isLocked: false, isMuted: false, isSolo: false },
-  { id: 'overlay1', type: 'overlay', name: 'Text',    isLocked: false, isMuted: false, isSolo: false }
+  { id: 'v1',       type: 'video',   name: 'Video 1',     isLocked: false, isMuted: false, isSolo: false },
+  { id: 'a1',       type: 'audio',   name: 'Audio 1',     isLocked: false, isMuted: false, isSolo: false },
+  { id: 'a2',       type: 'audio',   name: 'Extra Audio', isLocked: false, isMuted: false, isSolo: false },
+  { id: 'm1',       type: 'music',   name: 'Music',       isLocked: false, isMuted: false, isSolo: false },
+  { id: 'overlay1', type: 'overlay', name: 'Text',        isLocked: false, isMuted: false, isSolo: false }
 ]
 
 // ── Serialization ────────────────────────────────────────────────────────────
@@ -24,7 +25,7 @@ const DEFAULT_TRACKS: Track[] = [
 export function serializeProject(): object {
   const { projectName, projectPath, settings } = useProjectStore.getState()
   const { clips: mediaClips } = useMediaStore.getState()
-  const { tracks, clips: timelineClips, transitions, markers } = useTimelineStore.getState()
+  const { tracks, clips: timelineClips, transitions, markers, masterVolume } = useTimelineStore.getState()
 
   // Strip base64 thumbnails — they can be multiple MB and are fully regenerable
   // from source media when the project is reopened. thumbnailStatus resets to
@@ -46,6 +47,7 @@ export function serializeProject(): object {
     name: projectName ?? 'Untitled Project',
     savedAt: new Date().toISOString(),
     settings,
+    masterVolume,
     mediaClips: strippedMediaClips,
     tracks,
     timelineClips: strippedTimelineClips,
@@ -79,6 +81,7 @@ function deserializeProject(data: any, path: string): void {
     clips: data.timelineClips ?? [],
     transitions: data.transitions ?? [],
     markers: data.markers ?? [],
+    masterVolume: typeof data.masterVolume === 'number' ? data.masterVolume : 1,
     selectedClipId: null,
     selectedClipIds: [],
     clipboard: null,
@@ -149,6 +152,37 @@ export async function restoreAutosave(): Promise<boolean> {
   void checkExistingProxies()
 
   return true
+}
+
+/**
+ * Reset all stores to a clean empty state for a new project.
+ * Clears undo history, loop range, media bin, and timeline.
+ */
+export function createNewProject(): void {
+  useProjectStore.getState().newProject('Untitled Project')
+
+  useMediaStore.setState({
+    clips: [],
+    selectedClipId: null
+  })
+
+  useTimelineStore.setState({
+    tracks: DEFAULT_TRACKS,
+    clips: [],
+    transitions: [],
+    markers: [],
+    masterVolume: 1,
+    selectedClipId: null,
+    selectedClipIds: [],
+    clipboard: null,
+    playheadTime: 0,
+    isPlaying: false,
+    loopIn: null,
+    loopOut: null,
+    loopEnabled: false,
+    past: [],
+    future: []
+  })
 }
 
 /**

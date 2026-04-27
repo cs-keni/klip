@@ -18,6 +18,7 @@ interface Preset {
   crf: number
   x264Preset: string
   audioBitrate: string
+  format?: 'mp4' | 'gif' | 'webm'
 }
 
 const PRESETS: Preset[] = [
@@ -55,6 +56,22 @@ const PRESETS: Preset[] = [
     sub: '1280 × 720 · 30fps · H.264 CRF 28 (fast)',
     width: 1280, height: 720, fps: 30,
     crf: 28, x264Preset: 'veryfast', audioBitrate: '192k'
+  },
+  {
+    id: 'webm-1080',
+    label: 'WebM (VP9)',
+    sub: '1920 × 1080 · 30fps · VP9 + Opus',
+    width: 1920, height: 1080, fps: 30,
+    crf: 33, x264Preset: 'medium', audioBitrate: '192k',
+    format: 'webm' as const
+  },
+  {
+    id: 'gif-720',
+    label: 'Animated GIF',
+    sub: '1280 × 720 · 15fps · palette-based (no audio)',
+    width: 1280, height: 720, fps: 15,
+    crf: 28, x264Preset: 'veryfast', audioBitrate: '0k',
+    format: 'gif' as const
   }
 ]
 
@@ -136,13 +153,14 @@ export default function ExportDialog({ onClose }: ExportDialogProps): JSX.Elemen
     localStorage.setItem(SETTINGS_KEY, JSON.stringify({ outputFolder, fileName, presetId }))
   }, [outputFolder, fileName, presetId])
 
+  const preset = PRESETS.find((p) => p.id === presetId) ?? PRESETS[0]
+
   // Full resolved path shown as preview
+  const ext = preset.format === 'gif' ? 'gif' : preset.format === 'webm' ? 'webm' : 'mp4'
   const sep = outputFolder ? (outputFolder.includes('/') ? '/' : '\\') : '\\'
   const outputPath = outputFolder
-    ? `${outputFolder}${sep}${fileName.replace(/\.mp4$/i, '')}.mp4`
+    ? `${outputFolder}${sep}${fileName.replace(/\.(mp4|gif|webm)$/i, '')}.${ext}`
     : ''
-
-  const preset = PRESETS.find((p) => p.id === presetId) ?? PRESETS[0]
 
   // ── Derived timeline info ───────────────────────────────────────────────────
   const videoTrack = tracks.find((t) => t.type === 'video')
@@ -240,6 +258,7 @@ export default function ExportDialog({ onClose }: ExportDialogProps): JSX.Elemen
       crf: preset.crf,
       x264Preset: preset.x264Preset,
       audioBitrate: preset.audioBitrate,
+      format: preset.format,
       sampleRate: 48000,
       totalDuration,
       videoTrackId:  videoTrack?.id ?? '',
@@ -279,7 +298,12 @@ export default function ExportDialog({ onClose }: ExportDialogProps): JSX.Elemen
 
     setDialogState('exporting')
     setProgress(null)
-    await window.api.export.start(job)
+    try {
+      await window.api.export.start(job)
+    } catch (err) {
+      setDialogState('error')
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to start export. Is FFmpeg installed?')
+    }
   }, [outputPath, videoClips.length, mediaClips, tracks, timelineClips, totalDuration, preset, videoTrack, embedChapters, hasChapters, labeledMarkers])
 
   // ── Cancel ──────────────────────────────────────────────────────────────────
@@ -336,6 +360,7 @@ export default function ExportDialog({ onClose }: ExportDialogProps): JSX.Elemen
               fileName={fileName}
               setFileName={setFileName}
               outputPath={outputPath}
+              ext={ext}
               onPickFolder={handlePickFolder}
               onExport={handleExport}
               onClose={onClose}
@@ -390,6 +415,7 @@ export default function ExportDialog({ onClose }: ExportDialogProps): JSX.Elemen
 function IdleContent({
   presetId, setPresetId,
   outputFolder, fileName, setFileName, outputPath,
+  ext,
   onPickFolder, onExport, onClose,
   videoClipCount, missingVideoClipCount, missingVideoClipNames,
   totalDuration, estimatedMB, preset,
@@ -402,6 +428,7 @@ function IdleContent({
   fileName: string
   setFileName: (n: string) => void
   outputPath: string
+  ext: string
   onPickFolder: () => void
   onExport: () => void
   onClose: () => void
@@ -531,7 +558,7 @@ function IdleContent({
               placeholder="my-edit"
               className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-[var(--bg-base)] border border-[var(--border-subtle)] text-xs text-[var(--text-secondary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent-dim)] transition-colors"
             />
-            <span className="text-xs text-[var(--text-muted)] shrink-0">.mp4</span>
+            <span className="text-xs text-[var(--text-muted)] shrink-0">.{ext}</span>
           </div>
 
           {/* Full path preview */}

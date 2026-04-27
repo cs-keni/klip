@@ -184,7 +184,9 @@ Binary pass/fail — if any smoke fails, build is not releasable.
 ## Still To Implement
 
 ### P0 — Fill regression gaps as bugs ship
-- [ ] REG-003+ entries: add one test per bug that reaches production
+- [x] REG-012 — rippleDelete linked-track shift (Phase 11 fix)
+- [x] REG-013 — projectIO DEFAULT_TRACKS missing a2 (Phase 11 fix)
+- [ ] REG-014+ entries: add one test per future bug that reaches production
 
 ### P3 — Performance hardware benchmarks (§9.6 above)
 - All five are registered as `it.todo` — implement once CI has a machine with FFmpeg access

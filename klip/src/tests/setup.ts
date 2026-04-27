@@ -104,6 +104,16 @@ if (typeof window !== 'undefined') {
   // jsdom does not implement scrollIntoView — stub it so components that call it
   // (e.g. the CommandPalette active-item scroller) don't throw in tests.
   Element.prototype.scrollIntoView = vi.fn()
+
+  // jsdom does not implement ResizeObserver — stub it so components that use it
+  // (e.g. PreviewPanel's canvas height measurement) don't throw in tests.
+  if (!('ResizeObserver' in window)) {
+    ;(window as unknown as Record<string, unknown>).ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+  }
 }
 
 // ── console.error silencer ─────────────────────────────────────────────────────

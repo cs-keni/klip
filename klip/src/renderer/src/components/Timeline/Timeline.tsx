@@ -358,6 +358,48 @@ export default function Timeline(): JSX.Element {
         return
       }
 
+      // Navigate to previous/next marker
+      if (e.key === '[' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault()
+        const { markers: currentMarkers, playheadTime: ph } = useTimelineStore.getState()
+        const prev = [...currentMarkers]
+          .sort((a, b) => b.time - a.time)
+          .find((mk) => mk.time < ph - 0.01)
+        if (prev !== undefined) setPlayheadTime(prev.time)
+        return
+      }
+      if (e.key === ']' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault()
+        const { markers: currentMarkers, playheadTime: ph } = useTimelineStore.getState()
+        const next = [...currentMarkers]
+          .sort((a, b) => a.time - b.time)
+          .find((mk) => mk.time > ph + 0.01)
+        if (next !== undefined) setPlayheadTime(next.time)
+        return
+      }
+
+      // Zoom to selection (Shift+\)
+      if (e.key === '|' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault()
+        const { clips: currentClips, selectedClipIds: selIds } = useTimelineStore.getState()
+        const selClips = currentClips.filter((c) => selIds.includes(c.id))
+        if (selClips.length > 0) {
+          const selStart = Math.min(...selClips.map((c) => c.startTime))
+          const selEnd   = Math.max(...selClips.map((c) => c.startTime + c.duration))
+          const selDur   = selEnd - selStart
+          if (selDur > 0.01) {
+            const visibleWidth = (scrollRef.current?.clientWidth ?? 800) - HEADER_WIDTH
+            const newPps = Math.max(MIN_PX_PER_SEC, Math.min(MAX_PX_PER_SEC, visibleWidth / selDur))
+            setPxPerSec(newPps)
+            const scrollLeft = Math.max(0, selStart * newPps - HEADER_WIDTH - 40)
+            scrollRef.current?.scrollTo({ left: scrollLeft, behavior: 'smooth' })
+          }
+        } else {
+          zoomToFit()
+        }
+        return
+      }
+
       // Go to next / previous edit point (clip boundary)
       if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
         e.preventDefault()
@@ -409,7 +451,7 @@ export default function Timeline(): JSX.Element {
     trimToPlayhead, toggleSnap,
     loopIn, loopOut, loopEnabled,
     setLoopIn, setLoopOut, toggleLoop, clearLoop,
-    addMarker
+    addMarker, zoomToFit, setPxPerSec
   ])
 
   // ── Deselect when clicking empty space ───────────────────────────────────
@@ -646,6 +688,7 @@ export default function Timeline(): JSX.Element {
               onScrubStart={() => { setIsPlaying(false); setIsScrubbing(true) }}
               onScrubEnd={() => setIsScrubbing(false)}
               markers={markers}
+              onAddMarker={(t) => addMarker(t)}
               onRemoveMarker={removeMarker}
               onUpdateMarkerLabel={updateMarkerLabel}
               onUpdateMarkerColor={(id, color) => useTimelineStore.getState().updateMarkerColor(id, color)}

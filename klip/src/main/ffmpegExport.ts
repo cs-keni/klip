@@ -44,6 +44,8 @@ export interface ExportJob {
   fps: number
   crf: number
   x264Preset: string
+  /** Output container / codec override. Defaults to 'mp4' (H.264). */
+  format?: 'mp4' | 'gif' | 'webm'
   // Audio settings
   audioBitrate: string
   sampleRate: number
@@ -297,11 +299,18 @@ export function buildFFmpegArgs(job: ExportJob): string[] {
     function videoFadeFilters(): string {
       const parts: string[] = []
       if (toTransition) {
-        parts.push(`fade=t=in:st=0:d=${toTransition.duration.toFixed(3)}`)
+        // dip-to-black: each clip fades independently over D/2; fade: full crossfade overlap D
+        const inDur = toTransition.type === 'dip-to-black'
+          ? toTransition.duration / 2
+          : toTransition.duration
+        parts.push(`fade=t=in:st=0:d=${inDur.toFixed(3)}`)
       }
       if (fromTransition) {
-        const fadeStart = Math.max(0, outDuration - fromTransition.duration)
-        parts.push(`fade=t=out:st=${fadeStart.toFixed(3)}:d=${fromTransition.duration.toFixed(3)}`)
+        const outDur = fromTransition.type === 'dip-to-black'
+          ? fromTransition.duration / 2
+          : fromTransition.duration
+        const fadeStart = Math.max(0, outDuration - outDur)
+        parts.push(`fade=t=out:st=${fadeStart.toFixed(3)}:d=${outDur.toFixed(3)}`)
       }
       return parts.length ? ',' + parts.join(',') : ''
     }
@@ -313,7 +322,10 @@ export function buildFFmpegArgs(job: ExportJob): string[] {
       if (fadeIn > 0) {
         parts.push(`afade=t=in:st=0:d=${fadeIn.toFixed(3)}`)
       } else if (toTransition) {
-        parts.push(`afade=t=in:st=0:d=${toTransition.duration.toFixed(3)}`)
+        const inDur = toTransition.type === 'dip-to-black'
+          ? toTransition.duration / 2
+          : toTransition.duration
+        parts.push(`afade=t=in:st=0:d=${inDur.toFixed(3)}`)
       }
       // Clip-level fade out (takes priority over transition fade out)
       const fadeOut = clip.fadeOut ?? 0
@@ -321,8 +333,11 @@ export function buildFFmpegArgs(job: ExportJob): string[] {
         const fadeStart = Math.max(0, outDuration - fadeOut)
         parts.push(`afade=t=out:st=${fadeStart.toFixed(3)}:d=${fadeOut.toFixed(3)}`)
       } else if (fromTransition) {
-        const fadeStart = Math.max(0, outDuration - fromTransition.duration)
-        parts.push(`afade=t=out:st=${fadeStart.toFixed(3)}:d=${fromTransition.duration.toFixed(3)}`)
+        const outDur = fromTransition.type === 'dip-to-black'
+          ? fromTransition.duration / 2
+          : fromTransition.duration
+        const fadeStart = Math.max(0, outDuration - outDur)
+        parts.push(`afade=t=out:st=${fadeStart.toFixed(3)}:d=${outDur.toFixed(3)}`)
       }
       return parts.length ? ',' + parts.join(',') : ''
     }
@@ -540,6 +555,42 @@ export function buildFFmpegArgs(job: ExportJob): string[] {
     _pendingChapterMeta = chapterMetaPath
   }
 
+  const fmt = job.format ?? 'mp4'
+
+  if (fmt === 'gif') {
+    // GIF: palette-based encoding. Two-pass is ideal but single-pass via palettegen
+    // filter is the simplest approach within one FFmpeg invocation. No audio stream.
+    return [
+      ...inputArgs,
+      '-filter_complex', filterParts.join(';\n') + `;\n[vout]split[vs1][vs2];\n[vs1]palettegen=stats_mode=diff[pal];\n[vs2][pal]paletteuse=dither=bayer:bayer_scale=5[gifout]`,
+      '-map', '[gifout]',
+      '-r', String(fps),
+      '-loop', '0',
+      '-y',
+      job.outputPath
+    ]
+  }
+
+  if (fmt === 'webm') {
+    // WebM: VP9 video + Opus audio
+    return [
+      ...inputArgs,
+      '-filter_complex', filterParts.join(';\n'),
+      '-map', '[vout]',
+      '-map', '[aout]',
+      '-c:v', 'libvpx-vp9',
+      '-crf', String(crf),
+      '-b:v', '0',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'libopus',
+      '-b:a', audioBitrate,
+      '-ar', String(sampleRate),
+      '-y',
+      job.outputPath
+    ]
+  }
+
+  // Default: MP4 / H.264
   return [
     ...inputArgs,
     ...(chapterMetaPath ? ['-i', chapterMetaPath] : []),

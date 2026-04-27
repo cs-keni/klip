@@ -277,3 +277,73 @@ describe('REG-011', () => {
     expect(fixed).toBeNull()  // correctly skips when duration is NaN
   })
 })
+
+// ---------------------------------------------------------------------------
+// REG-012 — rippleDelete leaves audio track out of sync after deleting linked pair
+// Bug: rippleDelete only shifted clips on clip.trackId (the video track). When a
+//      linked video+audio pair was ripple-deleted, clips AFTER the audio on the
+//      audio track were NOT shifted, leaving subsequent clips out of sync.
+// ---------------------------------------------------------------------------
+import { useTimelineStore } from '@/stores/timelineStore'
+
+describe('REG-012', () => {
+  beforeEach(() => {
+    useTimelineStore.setState({
+      tracks: [
+        { id: 'v1', type: 'video', name: 'Video 1', isLocked: false, isMuted: false, isSolo: false },
+        { id: 'a1', type: 'audio', name: 'Audio 1', isLocked: false, isMuted: false, isSolo: false },
+      ],
+      clips: [], transitions: [], markers: [],
+      selectedClipId: null, selectedClipIds: [], clipboard: null,
+      playheadTime: 0, isPlaying: false, past: [], future: [],
+      snapEnabled: true, pxPerSec: 80, shuttleSpeed: 0,
+      loopIn: null, loopOut: null, loopEnabled: false, masterVolume: 1
+    })
+  })
+
+  it('shifts subsequent clips on the linked track after ripple-deleting a linked pair', () => {
+    // Layout: videoA(0-5) + audioA(0-5) linked, then videoB(5-10) + audioB(5-10) linked
+    useTimelineStore.setState({
+      clips: [
+        { id: 'vA', mediaClipId: 'm1', trackId: 'v1', startTime: 0,  duration: 5,  trimStart: 0, type: 'video', name: 'A', thumbnail: null, linkedClipId: 'aA' },
+        { id: 'aA', mediaClipId: 'm1', trackId: 'a1', startTime: 0,  duration: 5,  trimStart: 0, type: 'audio', name: 'A', thumbnail: null, linkedClipId: 'vA' },
+        { id: 'vB', mediaClipId: 'm2', trackId: 'v1', startTime: 5,  duration: 5,  trimStart: 0, type: 'video', name: 'B', thumbnail: null, linkedClipId: 'aB' },
+        { id: 'aB', mediaClipId: 'm2', trackId: 'a1', startTime: 5,  duration: 5,  trimStart: 0, type: 'audio', name: 'B', thumbnail: null, linkedClipId: 'vB' },
+      ]
+    })
+
+    useTimelineStore.getState().rippleDelete('vA')
+
+    const { clips } = useTimelineStore.getState()
+    const vB = clips.find((c) => c.id === 'vB')!
+    const aB = clips.find((c) => c.id === 'aB')!
+
+    // Both vA and aA are removed
+    expect(clips.find((c) => c.id === 'vA')).toBeUndefined()
+    expect(clips.find((c) => c.id === 'aA')).toBeUndefined()
+
+    // vB shifts left (video track) — this worked before the fix too
+    expect(vB.startTime).toBe(0)
+
+    // aB must also shift left (audio track) — this was the bug
+    expect(aB.startTime).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// REG-013 — projectIO DEFAULT_TRACKS fallback missing 'a2' Extra Audio track
+// Bug: projectIO.ts had a 4-track DEFAULT_TRACKS that omitted the 'a2' Extra
+//      Audio track, so a corrupted/legacy project open would restore the editor
+//      with only 4 tracks and no Extra Audio lane.
+// ---------------------------------------------------------------------------
+describe('REG-013', () => {
+  it('projectIO DEFAULT_TRACKS includes all 5 tracks including a2 Extra Audio', () => {
+    const src = readFileSync(
+      resolve('src/renderer/src/lib/projectIO.ts'),
+      'utf-8'
+    )
+    // Check that both DEFAULT_TRACKS entries cover a2
+    expect(src).toMatch(/id:\s*['"]a2['"]/)
+    expect(src).toMatch(/Extra Audio/)
+  })
+})

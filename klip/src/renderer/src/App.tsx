@@ -8,6 +8,7 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { useAppStore } from './stores/appStore'
 import { useProjectIO } from './hooks/useProjectIO'
 import { restoreAutosave } from './lib/projectIO'
+import { toast } from './stores/toastStore'
 
 export default function App(): JSX.Element {
   const view = useAppStore((s) => s.view)
@@ -17,7 +18,12 @@ export default function App(): JSX.Element {
   // Check for an autosave on startup — offer crash recovery
   useEffect(() => {
     window.api.project.checkAutosave().then((result) => {
-      if (result) setShowRecovery(true)
+      if (!result) return
+      if ('corrupted' in result) {
+        toast('Previous autosave was corrupted and could not be restored.', 'warning', 5000)
+      } else {
+        setShowRecovery(true)
+      }
     }).catch(() => {})
   }, [])
 

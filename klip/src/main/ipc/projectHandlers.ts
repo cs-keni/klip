@@ -144,12 +144,20 @@ export function registerProjectHandlers(): void {
   })
 
   ipcMain.handle('project:check-autosave', async () => {
+    let raw: string
     try {
-      const raw = await readFile(AUTOSAVE_FILE, 'utf-8')
+      raw = await readFile(AUTOSAVE_FILE, 'utf-8')
+    } catch {
+      return null  // no autosave file
+    }
+    try {
       const data = JSON.parse(raw)
       return { data }
     } catch {
-      return null
+      // File exists but is corrupt (e.g. truncated write on power loss).
+      // Delete it so it doesn't re-trigger on next launch.
+      try { await unlink(AUTOSAVE_FILE) } catch {}
+      return { corrupted: true }
     }
   })
 

@@ -13,6 +13,9 @@ interface Window {
       save: (args: { data: unknown; path: string | null }) => Promise<string | null>
       saveAs: (args: { data: unknown }) => Promise<string | null>
       open: (filePath?: string) => Promise<{ data: unknown; path: string } | null>
+      autosave: (data: unknown) => Promise<void>
+      checkAutosave: () => Promise<{ data: unknown } | { corrupted: true } | null>
+      clearAutosave: () => Promise<void>
     }
     window: {
       minimize: () => void
