@@ -4,9 +4,9 @@
 
 Klip is a Windows 11 desktop application for editing long OBS recordings into polished YouTube videos. It handles the full workflow: import raw footage, arrange clips on a multi-track timeline, apply effects and text overlays, and export a YouTube-ready MP4 — all without a subscription or internet connection.
 
-[![Klip welcome screen](https://raw.githubusercontent.com/cs-keni/klip/main/docs/screenshots/welcome.jpg)](https://raw.githubusercontent.com/cs-keni/klip/main/docs/screenshots/welcome.jpg)
+[![Klip welcome screen](https://raw.githubusercontent.com/cs-keni/klip/master/docs/screenshots/welcome.jpg)](https://raw.githubusercontent.com/cs-keni/klip/master/docs/screenshots/welcome.jpg)
 
-**[▶ Watch the demo](https://raw.githubusercontent.com/cs-keni/klip/main/docs/demo.mp4)**
+**[▶ Watch the demo](https://raw.githubusercontent.com/cs-keni/klip/master/docs/demo.mp4)**
 
 ---
 
@@ -54,11 +54,11 @@ Klip is a Windows 11 desktop application for editing long OBS recordings into po
 
 | Editor | Export |
 |---|---|
-| [![Main editor](https://raw.githubusercontent.com/cs-keni/klip/main/docs/screenshots/main.jpg)](https://raw.githubusercontent.com/cs-keni/klip/main/docs/screenshots/main.jpg) | [![Export dialog](https://raw.githubusercontent.com/cs-keni/klip/main/docs/screenshots/export.jpg)](https://raw.githubusercontent.com/cs-keni/klip/main/docs/screenshots/export.jpg) |
+| [![Main editor](https://raw.githubusercontent.com/cs-keni/klip/master/docs/screenshots/main.jpg)](https://raw.githubusercontent.com/cs-keni/klip/master/docs/screenshots/main.jpg) | [![Export dialog](https://raw.githubusercontent.com/cs-keni/klip/master/docs/screenshots/export.jpg)](https://raw.githubusercontent.com/cs-keni/klip/master/docs/screenshots/export.jpg) |
 
 | Settings |
 |---|
-| [![Settings](https://raw.githubusercontent.com/cs-keni/klip/main/docs/screenshots/settings.jpg)](https://raw.githubusercontent.com/cs-keni/klip/main/docs/screenshots/settings.jpg) |
+| [![Settings](https://raw.githubusercontent.com/cs-keni/klip/master/docs/screenshots/settings.jpg)](https://raw.githubusercontent.com/cs-keni/klip/master/docs/screenshots/settings.jpg) |
 
 ---
 
