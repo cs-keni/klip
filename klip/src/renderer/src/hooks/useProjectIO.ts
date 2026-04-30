@@ -27,13 +27,14 @@ export function useProjectIO(): void {
   }, [])
 
   useEffect(() => {
-    // Subscribe to timeline data (tracks, clips, transitions) — not playhead/zoom/selection
+    // Subscribe to timeline data (tracks, clips, transitions, markers) — not playhead/zoom/selection
     const unsubTimeline = useTimelineStore.subscribe((state, prev) => {
       if (!isLiveRef.current) return
       if (
         state.tracks !== prev.tracks ||
         state.clips !== prev.clips ||
-        state.transitions !== prev.transitions
+        state.transitions !== prev.transitions ||
+        state.markers !== prev.markers
       ) {
         useProjectStore.getState().setUnsavedChanges(true)
       }

@@ -4,13 +4,15 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Search, Save, FolderOpen, Download, Undo2, Redo2, Scissors,
   Trash2, Copy, Clipboard, Play, Repeat, Magnet, Type,
-  Settings, ChevronRight
+  Settings, ChevronRight, LogOut
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCommandPaletteStore } from '@/stores/commandPaletteStore'
 import { useTimelineStore } from '@/stores/timelineStore'
 import { useUIStore } from '@/stores/uiStore'
-import { saveProject, saveProjectAs, openProject } from '@/lib/projectIO'
+import { useProjectStore } from '@/stores/projectStore'
+import { useAppStore } from '@/stores/appStore'
+import { saveProject, saveProjectAs, openProject, createNewProject } from '@/lib/projectIO'
 import { type ReactNode } from 'react'
 
 // ── Command definition ─────────────────────────────────────────────────────────
@@ -69,6 +71,21 @@ function useCommands(closeAndRun: (fn: () => void) => void): CommandDef[] {
       category: 'File',
       icon: <FolderOpen size={13} />,
       action: () => closeAndRun(() => openProject())
+    },
+    {
+      id: 'file.close',
+      label: 'Close Project',
+      category: 'File',
+      icon: <LogOut size={13} />,
+      action: () => closeAndRun(() => {
+        const { hasUnsavedChanges } = useProjectStore.getState()
+        if (hasUnsavedChanges) {
+          const ok = window.confirm('You have unsaved changes. Close anyway?')
+          if (!ok) return
+        }
+        createNewProject()
+        useAppStore.getState().setView('welcome')
+      })
     },
     {
       id: 'file.export',

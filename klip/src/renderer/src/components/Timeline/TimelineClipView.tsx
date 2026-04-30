@@ -171,6 +171,8 @@ export default function TimelineClipView({
   const clipHeight = trackHeight - PADDING * 2
   const dispWidth  = clip.duration * pxPerSec
   const showLabel  = dispWidth >= MIN_LABEL
+  // Handle width scales inversely with zoom so handles stay clickable at any scale
+  const edgeHit   = Math.max(6, Math.min(20, 960 / pxPerSec))
 
   // ── Hover tooltip ────────────────────────────────────────────────────────────
   const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null)
@@ -402,7 +404,7 @@ export default function TimelineClipView({
         {/* ── Left trim handle ──────────────────────────────────────────────── */}
         <div
           className="absolute left-0 top-0 h-full z-10 cursor-ew-resize group/trim-l"
-          style={{ width: EDGE_HIT }}
+          style={{ width: edgeHit }}
           onPointerDown={(e) => startDrag(e, 'trim-left')}
         >
           <div
@@ -624,7 +626,7 @@ export default function TimelineClipView({
         {/* ── Right trim handle ─────────────────────────────────────────────── */}
         <div
           className="absolute right-0 top-0 h-full z-10 cursor-ew-resize group/trim-r"
-          style={{ width: EDGE_HIT }}
+          style={{ width: edgeHit }}
           onPointerDown={(e) => startDrag(e, 'trim-right')}
         >
           <div

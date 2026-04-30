@@ -662,13 +662,45 @@ Every interaction should feel responsive and alive — not flashy, just smooth a
 
 ### P2 — Animation & Polish
 
-- [ ] **Export dialog state cross-fade** — The `DialogState` switch between `idle → exporting → done → error` is a hard DOM swap. Wrap the content areas in `<AnimatePresence mode="wait">` with a 150ms fade so the progress bar slides in rather than snapping.
+- [x] **Export dialog state cross-fade** — The `DialogState` switch between `idle → exporting → done → error` is a hard DOM swap. Wrap the content areas in `<AnimatePresence mode="wait">` with a 150ms fade so the progress bar slides in rather than snapping.
 
-- [ ] **Clip resize handles scale with zoom** — Trim handle hit-targets are a fixed pixel width in `TimelineClipView`. At high zoom they're oversized; at low zoom they're unclickable. Compute handle width as `clamp(6, 12 / zoomFactor, 20)` so they scale inversely with zoom and remain usable at all levels.
+- [x] **Clip resize handles scale with zoom** — Trim handle hit-targets are a fixed pixel width in `TimelineClipView`. At high zoom they're oversized; at low zoom they're unclickable. Compute handle width as `clamp(6, 12 / zoomFactor, 20)` so they scale inversely with zoom and remain usable at all levels.
 
-- [ ] **Tooltip delay reduced to 150 ms** — The global tooltip delay is 300ms (`delayDuration` in `tooltip.tsx`). At that speed, tooltips appear after the user has already moved on. 150ms is the standard for dense tool-heavy apps (Figma, VS Code); change the default.
+- [x] **Tooltip delay reduced to 150 ms** — The global tooltip delay is 300ms (`delayDuration` in `tooltip.tsx`). At that speed, tooltips appear after the user has already moved on. 150ms is the standard for dense tool-heavy apps (Figma, VS Code); change the default.
 
-- [ ] **Stale markers auto-removed when timeline shrinks** — If clips are deleted and the total timeline duration shrinks, markers that now fall beyond the new end time become invisible orphans in the store. On any operation that reduces `totalDuration`, prune any `TimelineMarker` whose `time > newDuration` and show a toast if any were removed.
+- [x] **Stale markers auto-removed when timeline shrinks** — If clips are deleted and the total timeline duration shrinks, markers that now fall beyond the new end time become invisible orphans in the store. On any operation that reduces `totalDuration`, prune any `TimelineMarker` whose `time > newDuration` and show a toast if any were removed.
+
+---
+
+## Phase 14 — Bug Fixes & Remaining Polish ✅ COMPLETE
+
+> Goal: Close the last set of confirmed bugs and UX gaps discovered during full-codebase review.
+
+### P0 — Confirmed Bugs
+
+- [x] **TopToolbar Zoom In / Zoom Out buttons do nothing** — Wired to `setPxPerSec` (×0.75 / ×1.35) via `useTimelineStore`, same factors as the timeline toolbar.
+
+- [x] **TopToolbar Undo / Redo missing `disabled` state** — Added `disabled={past.length === 0}` / `disabled={future.length === 0}` and dynamic tooltip labels ("Nothing to undo/redo") matching the timeline toolbar.
+
+- [x] **Delete key double-fires when both Media Bin and Timeline have selections** — MediaBin's Delete handler now bails early with `if (useTimelineStore.getState().selectedClipIds.length > 0) return`.
+
+- [x] **Markers do not mark the project dirty** — Added `state.markers !== prev.markers` to the `useProjectIO` dirty-check subscription.
+
+### P1 — UX Gaps
+
+- [x] **No "Close Project" action** — "Close Project" added to the Command Palette under File. Prompts for unsaved changes via `window.confirm`, then calls `createNewProject()` + `setView('welcome')`.
+
+- [x] **Ctrl+A to select all timeline clips** — Added to `Timeline.tsx` keyboard handler; selects all clips on unlocked tracks.
+
+- [x] **Silent import deduplication** — `importPaths` now counts valid-extension duplicates separately and shows a toast ("1 file already in Media Bin" / "N files already in Media Bin") when any are skipped.
+
+### P2 — Polish
+
+- [x] **Escape deselects timeline clips** — Escape handler extended: clears loop first if active, then deselects all clips if any are selected.
+
+- [x] **Drag a `.klip` file onto the Welcome Screen to open it** — Added `dragover` / `drop` handlers with a full-screen dashed overlay and `openProject(droppedPath)` call on `.klip` files.
+
+- [x] **Media Bin sort control** — Sort dropdown added to the Media Bin header (visible when ≥2 clips): Date Added (default), Name A→Z, Type, Duration. Local state only, no store needed.
 
 ---
 

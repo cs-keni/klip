@@ -1,15 +1,26 @@
 import { useState, useCallback, useRef, useEffect, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Upload, Film, Square } from 'lucide-react'
+import { Upload, Film, Square, ArrowUpDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useMediaStore } from '@/stores/mediaStore'
 import { useSourceViewerStore } from '@/stores/sourceViewerStore'
+import { useTimelineStore } from '@/stores/timelineStore'
 import { processMediaFile, getMediaTypeFromPath } from '@/lib/mediaUtils'
+import { toast } from '@/stores/toastStore'
 import type { MediaClip } from '@/types/media'
 import ClipCard from './ClipCard'
 import SkeletonCard from './SkeletonCard'
 import ClipContextMenu from './ClipContextMenu'
 import ColorClipDialog from './ColorClipDialog'
+
+type SortKey = 'dateAdded' | 'name' | 'type' | 'duration'
+
+const SORT_LABELS: Record<SortKey, string> = {
+  dateAdded: 'Date Added',
+  name:      'Name (A→Z)',
+  type:      'Type',
+  duration:  'Duration'
+}
 
 const ACCEPTED_EXTENSIONS = /\.(mp4|mkv|mov|avi|webm|mp3|wav|aac|flac|ogg|m4a|png|jpg|jpeg|webp)$/i
 
@@ -27,17 +38,21 @@ export default function MediaBin(): JSX.Element {
   const [colorDialogOpen, setColorDialogOpen] = useState(false)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [renamingClipId, setRenamingClipId] = useState<string | null>(null)
+  const [sortBy, setSortBy] = useState<SortKey>('dateAdded')
+  const [showSortMenu, setShowSortMenu] = useState(false)
   const processingRef = useRef<Set<string>>(new Set())
 
   const isDragOver = dragCounter > 0
 
-  // Delete key removes the currently selected clip
+  // Delete key removes the currently selected clip — bail if timeline has active selection
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key !== 'Delete' && e.key !== 'Backspace') return
       // Don't fire while the user is typing in an input
       const tag = (e.target as HTMLElement).tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      // Don't fire when the timeline has clips selected — Timeline.tsx owns that Delete
+      if (useTimelineStore.getState().selectedClipIds.length > 0) return
       if (selectedClipId) {
         const clip = useMediaStore.getState().clips.find((c) => c.id === selectedClipId)
         if (clip?.type === 'video' && clip.proxyStatus === 'generating') {
@@ -55,9 +70,12 @@ export default function MediaBin(): JSX.Element {
   const importPaths = useCallback(
     async (rawPaths: string[]) => {
       const existingPaths = new Set(clips.map((c) => c.path))
-      const paths = rawPaths.filter(
-        (p) => ACCEPTED_EXTENSIONS.test(p) && !existingPaths.has(p)
-      )
+      const validPaths = rawPaths.filter((p) => ACCEPTED_EXTENSIONS.test(p))
+      const paths = validPaths.filter((p) => !existingPaths.has(p))
+      const skipped = validPaths.length - paths.length
+      if (skipped > 0) {
+        toast(skipped === 1 ? '1 file already in Media Bin' : `${skipped} files already in Media Bin`, 'info', 2500)
+      }
       if (paths.length === 0) return
 
       // 1. Create placeholder clips right away (they show as skeletons)
@@ -250,6 +268,25 @@ export default function MediaBin(): JSX.Element {
     [addClip]
   )
 
+  // ─── Sorted clips ────────────────────────────────────────────────────────────
+
+  const sortedClips = [...clips].sort((a, b) => {
+    switch (sortBy) {
+      case 'name':     return a.name.localeCompare(b.name)
+      case 'type':     return a.type.localeCompare(b.type)
+      case 'duration': return b.duration - a.duration
+      default:         return b.addedAt - a.addedAt
+    }
+  })
+
+  // Close sort menu when clicking outside
+  useEffect(() => {
+    if (!showSortMenu) return
+    function onDown() { setShowSortMenu(false) }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [showSortMenu])
+
   // ─── Render ──────────────────────────────────────────────────────────────────
 
   const isEmpty = clips.length === 0
@@ -274,6 +311,49 @@ export default function MediaBin(): JSX.Element {
           )}
         </span>
         <div className="flex items-center gap-1">
+          {/* Sort control */}
+          {clips.length > 1 && (
+            <div className="relative" onClick={(e) => e.stopPropagation()}>
+              <button
+                title={`Sort: ${SORT_LABELS[sortBy]}`}
+                onClick={() => setShowSortMenu((v) => !v)}
+                className={cn(
+                  'flex items-center gap-1 px-1.5 py-1 rounded text-xs font-medium transition-colors duration-100',
+                  showSortMenu
+                    ? 'bg-[var(--accent-dim)] text-[var(--accent-bright)]'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)]'
+                )}
+              >
+                <ArrowUpDown size={11} />
+              </button>
+              <AnimatePresence>
+                {showSortMenu && (
+                  <motion.div
+                    className="absolute top-full right-0 mt-1 z-[9999] rounded-lg overflow-hidden border border-[var(--border)] bg-[var(--bg-overlay)] shadow-xl min-w-[140px]"
+                    initial={{ opacity: 0, scale: 0.94, y: -4 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.94, y: -4 }}
+                    transition={{ duration: 0.1, ease: 'easeOut' }}
+                  >
+                    {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
+                      <button
+                        key={key}
+                        onClick={() => { setSortBy(key); setShowSortMenu(false) }}
+                        className={cn(
+                          'w-full flex items-center px-3 py-1.5 text-xs text-left transition-colors duration-75',
+                          sortBy === key
+                            ? 'bg-[var(--accent-dim)] text-[var(--accent-bright)]'
+                            : 'text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]'
+                        )}
+                      >
+                        {SORT_LABELS[key]}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
           <HeaderButton
             icon={<Square size={12} />}
             title="Solid Color Clip"
@@ -325,7 +405,7 @@ export default function MediaBin(): JSX.Element {
         ) : (
           <div className="p-2 grid grid-cols-2 gap-2 content-start">
             <AnimatePresence mode="popLayout">
-              {clips.map((clip) =>
+              {sortedClips.map((clip) =>
                 clip.thumbnailStatus === 'generating' ? (
                   <motion.div
                     key={clip.id}

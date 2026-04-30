@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, FolderOpen, Clock, ChevronRight, Film } from 'lucide-react'
 import klipIcon from '@/assets/icon.ico'
 import { useAppStore } from '@/stores/appStore'
@@ -26,6 +26,7 @@ function formatRelativeTime(isoString: string): string {
 export default function WelcomeScreen(): JSX.Element {
   const setView = useAppStore((s) => s.setView)
   const [recentProjects, setRecentProjects] = useState<RecentEntry[]>([])
+  const [isDragOver, setIsDragOver] = useState(false)
 
   useEffect(() => {
     window.api.project.getRecent().then(setRecentProjects).catch(() => {})
@@ -44,8 +45,32 @@ export default function WelcomeScreen(): JSX.Element {
     await openProject(path)
   }
 
+  function handleDragOver(e: React.DragEvent): void {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'open'
+    setIsDragOver(true)
+  }
+
+  function handleDragLeave(): void {
+    setIsDragOver(false)
+  }
+
+  async function handleDrop(e: React.DragEvent): Promise<void> {
+    e.preventDefault()
+    setIsDragOver(false)
+    const files = Array.from(e.dataTransfer.files) as Array<File & { path: string }>
+    const klipFile = files.find((f) => f.path?.endsWith('.klip'))
+    if (klipFile) await openProject(klipFile.path)
+  }
+
   return (
-    <div className="relative h-full flex flex-col items-center justify-center bg-[var(--bg-base)] overflow-hidden">
+    <div
+      className="relative h-full flex flex-col items-center justify-center bg-[var(--bg-base)] overflow-hidden transition-colors duration-150"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      style={isDragOver ? { background: 'color-mix(in srgb, var(--bg-base), var(--accent) 6%)' } : undefined}
+    >
       {/* Subtle radial glow behind the logo */}
       <div
         className="absolute inset-0 pointer-events-none"
@@ -54,6 +79,23 @@ export default function WelcomeScreen(): JSX.Element {
             'radial-gradient(ellipse 65% 55% at 50% 42%, rgba(124, 58, 237, 0.07) 0%, transparent 70%)'
         }}
       />
+
+      {/* .klip drag-over overlay */}
+      <AnimatePresence>
+        {isDragOver && (
+          <motion.div
+            className="absolute inset-4 z-20 rounded-2xl border-2 border-dashed border-[var(--accent)] flex flex-col items-center justify-center gap-3 pointer-events-none"
+            style={{ background: 'rgba(124,58,237,0.08)' }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.1 }}
+          >
+            <FolderOpen size={28} className="text-[var(--accent-bright)]" />
+            <p className="text-sm font-semibold text-[var(--accent-bright)]">Drop to open project</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <motion.div
         className="relative z-10 flex flex-col items-center gap-10 w-full max-w-lg px-6"

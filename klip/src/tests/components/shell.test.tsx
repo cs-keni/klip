@@ -309,7 +309,8 @@ describe('3.10 TopToolbar', () => {
 
   it('clicking Undo button calls useTimelineStore.undo', async () => {
     const undo = vi.fn()
-    useTimelineStore.setState({ undo })
+    // past must be non-empty so the button is enabled
+    useTimelineStore.setState({ undo, past: [useTimelineStore.getState() as never] })
     const { default: TopToolbar } = await import('@/components/Layout/TopToolbar')
     const { container } = render(<TopToolbar {...defaultProps} />)
 
@@ -323,7 +324,8 @@ describe('3.10 TopToolbar', () => {
 
   it('clicking Redo button calls useTimelineStore.redo', async () => {
     const redo = vi.fn()
-    useTimelineStore.setState({ redo })
+    // future must be non-empty so the button is enabled
+    useTimelineStore.setState({ redo, future: [useTimelineStore.getState() as never] })
     const { default: TopToolbar } = await import('@/components/Layout/TopToolbar')
     const { container } = render(<TopToolbar {...defaultProps} />)
 

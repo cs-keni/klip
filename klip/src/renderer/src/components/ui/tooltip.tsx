@@ -16,7 +16,7 @@ interface TooltipProps {
 export function Tooltip({
   content,
   children,
-  delay = 400,
+  delay = 150,
   side = 'bottom'
 }: TooltipProps): JSX.Element {
   const [visible, setVisible] = useState(false)

@@ -1,10 +1,18 @@
 import { create } from 'zustand'
+import { toast } from './toastStore'
 import type {
   Track, TimelineClip, HistoryEntry, Transition,
   TextSettings, ColorSettings, CropSettings, TimelineMarker
 } from '@/types/timeline'
 
 type TrimPatch = Partial<Pick<TimelineClip, 'startTime' | 'trimStart' | 'duration'>>
+
+function pruneMarkers(markers: TimelineMarker[], clips: TimelineClip[]): { markers: TimelineMarker[]; pruned: number } {
+  const lastClipEnd = clips.reduce((max, c) => Math.max(max, c.startTime + c.duration), 0)
+  if (lastClipEnd === 0) return { markers, pruned: 0 }
+  const kept = markers.filter((m) => m.time <= lastClipEnd + 0.001)
+  return { markers: kept, pruned: markers.length - kept.length }
+}
 
 const DEFAULT_TRACKS: Track[] = [
   { id: 'v1',       type: 'video',   name: 'Video 1',     isLocked: false, isMuted: false, isSolo: false },
@@ -204,43 +212,60 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       selectedClipIds: clips.map((c) => c.id)
     })),
 
-  removeClip: (id) =>
+  removeClip: (id) => {
+    let prunedMarkers = 0
     set((s) => {
       const clip = s.clips.find((c) => c.id === id)
       const linkedId = clip?.linkedClipId
       const idsToRemove = new Set([id, ...(linkedId ? [linkedId] : [])])
+      const newClips = s.clips.filter((c) => !idsToRemove.has(c.id))
+      const { markers, pruned } = pruneMarkers(s.markers, newClips)
+      prunedMarkers = pruned
       return {
         past: [...s.past.slice(-49), snapshot(s)],
         future: [],
-        clips: s.clips.filter((c) => !idsToRemove.has(c.id)),
+        clips: newClips,
+        markers,
         transitions: s.transitions.filter(
           (t) => !idsToRemove.has(t.fromClipId) && !idsToRemove.has(t.toClipId)
         ),
         selectedClipId:  idsToRemove.has(s.selectedClipId ?? '') ? null : s.selectedClipId,
         selectedClipIds: s.selectedClipIds.filter((x) => !idsToRemove.has(x))
       }
-    }),
+    })
+    if (prunedMarkers > 0) {
+      toast(`${prunedMarkers} marker${prunedMarkers !== 1 ? 's' : ''} removed (past timeline end)`, 'info', 3000)
+    }
+  },
 
-  removeSelectedClips: () =>
+  removeSelectedClips: () => {
+    let prunedMarkers = 0
     set((s) => {
       if (s.selectedClipIds.length === 0) return s
       const ids = new Set(s.selectedClipIds)
-      // Also pull in any linked clips
       for (const selId of s.selectedClipIds) {
         const linked = s.clips.find((c) => c.id === selId)?.linkedClipId
         if (linked) ids.add(linked)
       }
+      const newClips = s.clips.filter((c) => !ids.has(c.id))
+      const { markers, pruned } = pruneMarkers(s.markers, newClips)
+      prunedMarkers = pruned
       return {
         past: [...s.past.slice(-49), snapshot(s)],
         future: [],
-        clips: s.clips.filter((c) => !ids.has(c.id)),
+        clips: newClips,
+        markers,
         transitions: s.transitions.filter(
           (t) => !ids.has(t.fromClipId) && !ids.has(t.toClipId)
         ),
         selectedClipId:  null,
         selectedClipIds: []
       }
-    }),
+    })
+    if (prunedMarkers > 0) {
+      toast(`${prunedMarkers} marker${prunedMarkers !== 1 ? 's' : ''} removed (past timeline end)`, 'info', 3000)
+    }
+  },
 
   selectClip: (id) =>
     set({
@@ -461,7 +486,8 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       }
     }),
 
-  rippleDelete: (id) =>
+  rippleDelete: (id) => {
+    let prunedMarkers = 0
     set((s) => {
       const clip = s.clips.find((c) => c.id === id)
       if (!clip) return s
@@ -470,34 +496,40 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       const gapEnd       = clip.startTime + clip.duration
       const linkedGapEnd = linkedClip ? linkedClip.startTime + linkedClip.duration : null
       const idsToRemove  = new Set([id, ...(linkedId ? [linkedId] : [])])
+      const newClips = s.clips
+        .filter((c) => !idsToRemove.has(c.id))
+        .map((c) => {
+          if (c.trackId === clip.trackId && c.startTime >= gapEnd - 0.001)
+            return { ...c, startTime: c.startTime - clip.duration }
+          if (linkedClip && linkedGapEnd !== null &&
+              c.trackId === linkedClip.trackId && c.startTime >= linkedGapEnd - 0.001)
+            return { ...c, startTime: c.startTime - linkedClip.duration }
+          return c
+        })
+      const { markers, pruned } = pruneMarkers(s.markers, newClips)
+      prunedMarkers = pruned
       return {
         past: [...s.past.slice(-49), snapshot(s)],
         future: [],
         selectedClipId:  idsToRemove.has(s.selectedClipId ?? '') ? null : s.selectedClipId,
         selectedClipIds: s.selectedClipIds.filter((x) => !idsToRemove.has(x)),
-        clips: s.clips
-          .filter((c) => !idsToRemove.has(c.id))
-          .map((c) => {
-            // Shift clips after the deleted clip on the video/primary track
-            if (c.trackId === clip.trackId && c.startTime >= gapEnd - 0.001)
-              return { ...c, startTime: c.startTime - clip.duration }
-            // Also shift clips after the deleted linked clip on its track (keeps sync)
-            if (linkedClip && linkedGapEnd !== null &&
-                c.trackId === linkedClip.trackId && c.startTime >= linkedGapEnd - 0.001)
-              return { ...c, startTime: c.startTime - linkedClip.duration }
-            return c
-          }),
+        clips: newClips,
+        markers,
         transitions: s.transitions.filter(
           (t) => !idsToRemove.has(t.fromClipId) && !idsToRemove.has(t.toClipId)
         )
       }
-    }),
+    })
+    if (prunedMarkers > 0) {
+      toast(`${prunedMarkers} marker${prunedMarkers !== 1 ? 's' : ''} removed (past timeline end)`, 'info', 3000)
+    }
+  },
 
-  rippleDeleteSelected: () =>
+  rippleDeleteSelected: () => {
+    let prunedMarkers = 0
     set((s) => {
       if (s.selectedClipIds.length === 0) return s
       const ids = new Set(s.selectedClipIds)
-      // Also pull in any linked clips (audio pairs of selected video clips)
       for (const selId of s.selectedClipIds) {
         const linked = s.clips.find((c) => c.id === selId)?.linkedClipId
         if (linked) ids.add(linked)
@@ -510,7 +542,6 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       let transitions = [...s.transitions]
 
       for (const del of toDelete) {
-        // Look up the clip's current position — earlier iterations may have shifted it
         const current = clips.find((c) => c.id === del.id)
         if (!current) continue
         const gapEnd = current.startTime + current.duration
@@ -526,15 +557,23 @@ export const useTimelineStore = create<TimelineState>((set) => ({
         )
       }
 
+      const { markers, pruned } = pruneMarkers(s.markers, clips)
+      prunedMarkers = pruned
+
       return {
         past: [...s.past.slice(-49), snapshot(s)],
         future: [],
         clips,
+        markers,
         transitions,
         selectedClipId:  null,
         selectedClipIds: []
       }
-    }),
+    })
+    if (prunedMarkers > 0) {
+      toast(`${prunedMarkers} marker${prunedMarkers !== 1 ? 's' : ''} removed (past timeline end)`, 'info', 3000)
+    }
+  },
 
   copySelectedClips: () =>
     set((s) => {

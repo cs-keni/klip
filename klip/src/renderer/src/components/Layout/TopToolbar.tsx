@@ -6,6 +6,9 @@ import { saveProject } from '@/lib/projectIO'
 import { useTimelineStore } from '@/stores/timelineStore'
 import { useProjectStore } from '@/stores/projectStore'
 
+const MIN_PX_PER_SEC = 2
+const MAX_PX_PER_SEC = 1000
+
 interface TopToolbarProps {
   onExportClick: () => void
   onAddTextClip: () => void
@@ -31,7 +34,7 @@ export default function TopToolbar({
   onWhatsThisClick,
   whatsThisActive
 }: TopToolbarProps): JSX.Element {
-  const { undo, redo } = useTimelineStore()
+  const { undo, redo, past, future, pxPerSec, setPxPerSec } = useTimelineStore()
   const { settings } = useProjectStore()
 
   return (
@@ -59,16 +62,16 @@ export default function TopToolbar({
 
       {/* History */}
       <ToolGroup>
-        <ToolBtn icon={<Undo2 size={14} />} label="Undo  Ctrl+Z" onClick={undo} dataHelp="undo-redo" />
-        <ToolBtn icon={<Redo2 size={14} />} label="Redo  Ctrl+Shift+Z" onClick={redo} dataHelp="undo-redo" />
+        <ToolBtn icon={<Undo2 size={14} />} label={past.length === 0 ? 'Nothing to undo (Ctrl+Z)' : 'Undo  Ctrl+Z'} onClick={undo} disabled={past.length === 0} dataHelp="undo-redo" />
+        <ToolBtn icon={<Redo2 size={14} />} label={future.length === 0 ? 'Nothing to redo (Ctrl+Shift+Z)' : 'Redo  Ctrl+Shift+Z'} onClick={redo} disabled={future.length === 0} dataHelp="undo-redo" />
       </ToolGroup>
 
       <ToolDivider />
 
       {/* Timeline zoom */}
       <ToolGroup>
-        <ToolBtn icon={<ZoomOut size={14} />} label="Zoom Out  -" dataHelp="zoom-fit" />
-        <ToolBtn icon={<ZoomIn size={14} />} label="Zoom In  +" dataHelp="zoom-fit" />
+        <ToolBtn icon={<ZoomOut size={14} />} label="Zoom Out  -" onClick={() => setPxPerSec(Math.max(MIN_PX_PER_SEC, pxPerSec * 0.75))} dataHelp="zoom-fit" />
+        <ToolBtn icon={<ZoomIn size={14} />} label="Zoom In  +" onClick={() => setPxPerSec(Math.min(MAX_PX_PER_SEC, pxPerSec * 1.35))} dataHelp="zoom-fit" />
       </ToolGroup>
 
       {/* Spacer */}

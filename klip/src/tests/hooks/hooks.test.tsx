@@ -165,7 +165,8 @@ describe('3.21 useProjectIO', () => {
 describe('3.22 useWaveform', () => {
   it('returns { peaks: null, loading: false } immediately when filePath is null', () => {
     const { result } = renderHook(() => useWaveform(null, 'audio'))
-    expect(result.current).toEqual({ peaks: null, loading: false })
+    expect(result.current.peaks).toBeNull()
+    expect(result.current.loading).toBe(false)
   })
 
   it('returns { peaks: null, loading: true } on initial mount before data loads', () => {

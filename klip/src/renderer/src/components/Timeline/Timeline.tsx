@@ -329,6 +329,18 @@ export default function Timeline(): JSX.Element {
         e.preventDefault(); redo(); return
       }
 
+      // Ctrl+A — select all clips on unlocked tracks
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        e.preventDefault()
+        const { clips: currentClips, tracks: currentTracks } = useTimelineStore.getState()
+        const unlockedIds = new Set(currentTracks.filter((t) => !t.isLocked).map((t) => t.id))
+        const allIds = currentClips.filter((c) => unlockedIds.has(c.trackId)).map((c) => c.id)
+        if (allIds.length > 0) {
+          useTimelineStore.setState({ selectedClipIds: allIds, selectedClipId: allIds[0] })
+        }
+        return
+      }
+
       // Delete / ripple-delete — works on all selected clips
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedClipIds.length === 0) return
@@ -430,9 +442,11 @@ export default function Timeline(): JSX.Element {
         e.preventDefault(); toggleLoop(); return
       }
       if (e.key === 'Escape') {
-        // Clear loop if it's active, otherwise let other handlers take it
         if (loopEnabled || loopIn !== null || loopOut !== null) {
           e.preventDefault(); clearLoop(); return
+        }
+        if (selectedClipIds.length > 0) {
+          e.preventDefault(); selectClip(null); return
         }
       }
     }
@@ -444,7 +458,7 @@ export default function Timeline(): JSX.Element {
     shuttleSpeed, setShuttleSpeed,
     playheadTime, setPlayheadTime,
     zoomToFit, undo, redo,
-    selectedClipId, selectedClipIds,
+    selectedClipId, selectedClipIds, selectClip,
     removeClip, removeSelectedClips,
     splitClip, rippleDelete, rippleDeleteSelected,
     copySelectedClips, pasteClips, pasteClipsWithRipple,
